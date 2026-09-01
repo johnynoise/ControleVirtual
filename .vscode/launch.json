@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: FastAPI (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "jinja": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Frontend: Vite (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "frontend: dev server"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Backend + Frontend",
+      "configurations": [
+        "Backend: FastAPI (uvicorn)",
+        "Frontend: Vite (Chrome)"
+      ],
+      "stopAll": true
+    }
+  ]
+}

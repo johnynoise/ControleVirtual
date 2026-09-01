@@ -1,0 +1,20 @@
+# Dependências
+node_modules/
+
+# Build
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Variáveis de ambiente
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.local
