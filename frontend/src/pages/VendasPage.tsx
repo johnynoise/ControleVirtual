@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import type {
+  Cliente,
   FormaPagamento,
   ItemVendaCreate,
   Produto,
@@ -7,6 +8,7 @@ import type {
   VendaCreate,
 } from "../types";
 import { listarProdutos } from "../services/produtos";
+import { criarCliente, listarClientes } from "../services/clientes";
 import { criarVenda, listarVendas } from "../services/vendas";
 
 const PAGAMENTOS: { valor: FormaPagamento; rotulo: string }[] = [
@@ -46,6 +48,7 @@ function formatarData(iso: string): string {
 export default function VendasPage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -57,9 +60,16 @@ export default function VendasPage() {
 
   // Carrinho e dados da venda.
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
-  const [clienteNome, setClienteNome] = useState("");
+  const [clienteId, setClienteId] = useState<number | "">("");
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>("dinheiro");
   const [desconto, setDesconto] = useState("0");
+
+  // Cadastro rápido de cliente direto na tela de venda.
+  const [novoCliente, setNovoCliente] = useState(false);
+  const [ncNome, setNcNome] = useState("");
+  const [ncTelefone, setNcTelefone] = useState("");
+  const [ncEmail, setNcEmail] = useState("");
+  const [salvandoCliente, setSalvandoCliente] = useState(false);
 
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) ?? null;
 
@@ -67,9 +77,14 @@ export default function VendasPage() {
     setCarregando(true);
     setErro(null);
     try {
-      const [prods, vnds] = await Promise.all([listarProdutos(), listarVendas()]);
+      const [prods, vnds, clis] = await Promise.all([
+        listarProdutos(),
+        listarVendas(),
+        listarClientes({ apenas_ativos: true }),
+      ]);
       setProdutos(prods);
       setVendas(vnds);
+      setClientes(clis);
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -137,9 +152,42 @@ export default function VendasPage() {
     setCarrinho((atual) => atual.filter((i) => i.produto_id !== produto_id));
   }
 
+  function cancelarNovoCliente() {
+    setNovoCliente(false);
+    setNcNome("");
+    setNcTelefone("");
+    setNcEmail("");
+  }
+
+  async function salvarNovoCliente() {
+    if (ncNome.trim() === "") {
+      setErro("Informe o nome do cliente.");
+      return;
+    }
+    setSalvandoCliente(true);
+    setErro(null);
+    try {
+      const criado = await criarCliente({
+        nome: ncNome.trim(),
+        telefone: ncTelefone.trim() || null,
+        email: ncEmail.trim() || null,
+        ativo: true,
+      });
+      // Atualiza a lista e já seleciona o cliente recém-criado.
+      setClientes(await listarClientes({ apenas_ativos: true }));
+      setClienteId(criado.id);
+      cancelarNovoCliente();
+    } catch (err) {
+      setErro(extrairErro(err));
+    } finally {
+      setSalvandoCliente(false);
+    }
+  }
+
   function limparVenda() {
     setCarrinho([]);
-    setClienteNome("");
+    setClienteId("");
+    cancelarNovoCliente();
     setFormaPagamento("dinheiro");
     setDesconto("0");
     setProdutoId("");
@@ -162,7 +210,7 @@ export default function VendasPage() {
     }));
 
     const payload: VendaCreate = {
-      cliente_nome: clienteNome.trim() || null,
+      cliente_id: clienteId === "" ? null : clienteId,
       forma_pagamento: formaPagamento,
       desconto: descontoNum,
       itens,
@@ -278,11 +326,31 @@ export default function VendasPage() {
         <div className="grid-4">
           <label style={{ gridColumn: "span 2" }}>
             Cliente
-            <input
-              value={clienteNome}
-              onChange={(e) => setClienteNome(e.target.value)}
-              placeholder="Opcional"
-            />
+            <div className="linha-inline">
+              <select
+                value={clienteId}
+                onChange={(e) =>
+                  setClienteId(e.target.value === "" ? "" : Number(e.target.value))
+                }
+                disabled={novoCliente}
+              >
+                <option value="">Sem cliente</option>
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+              {!novoCliente && (
+                <button
+                  type="button"
+                  className="btn secundario pequeno"
+                  onClick={() => setNovoCliente(true)}
+                >
+                  + Novo
+                </button>
+              )}
+            </div>
           </label>
           <label>
             Pagamento
@@ -308,6 +376,56 @@ export default function VendasPage() {
             />
           </label>
         </div>
+
+        {novoCliente && (
+          <div className="novo-cliente">
+            <h3>Cadastrar novo cliente</h3>
+            <div className="grid-4">
+              <label style={{ gridColumn: "span 2" }}>
+                Nome
+                <input
+                  value={ncNome}
+                  onChange={(e) => setNcNome(e.target.value)}
+                  placeholder="Ex.: Maria Silva"
+                />
+              </label>
+              <label>
+                Telefone
+                <input
+                  value={ncTelefone}
+                  onChange={(e) => setNcTelefone(e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+              <label>
+                E-mail
+                <input
+                  type="email"
+                  value={ncEmail}
+                  onChange={(e) => setNcEmail(e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+            </div>
+            <div className="form-acoes">
+              <button
+                type="button"
+                className="btn primario pequeno"
+                onClick={salvarNovoCliente}
+                disabled={salvandoCliente}
+              >
+                {salvandoCliente ? "Salvando..." : "Salvar cliente"}
+              </button>
+              <button
+                type="button"
+                className="btn secundario pequeno"
+                onClick={cancelarNovoCliente}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="margem-preview">
           <span>

@@ -46,6 +46,7 @@ class ItemVendaOut(BaseModel):
 # Venda
 # --------------------------------------------------------------------------- #
 class VendaCreate(BaseModel):
+    cliente_id: int | None = None
     cliente_nome: str | None = Field(default=None, max_length=200)
     forma_pagamento: FormaPagamento | None = None
     desconto: Decimal = Field(default=Decimal("0"), ge=0)
@@ -57,6 +58,7 @@ class VendaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    cliente_id: int | None
     cliente_nome: str | None
     forma_pagamento: str | None
     total_bruto: Decimal

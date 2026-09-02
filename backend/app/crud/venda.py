@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.models.cliente import Cliente
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import Produto
 from app.models.venda import ItemVenda, Venda
@@ -34,8 +35,19 @@ def obter(db: Session, venda_id: int) -> Venda | None:
 
 
 def criar(db: Session, dados: VendaCreate) -> Venda:
+    # Resolve o cliente (se informado) e usa o nome dele como snapshot.
+    cliente_nome = dados.cliente_nome
+    cliente_id = None
+    if dados.cliente_id is not None:
+        cliente = db.get(Cliente, dados.cliente_id)
+        if cliente is None:
+            raise ErroVenda("Cliente informado não existe.")
+        cliente_id = cliente.id
+        cliente_nome = cliente.nome
+
     venda = Venda(
-        cliente_nome=dados.cliente_nome,
+        cliente_id=cliente_id,
+        cliente_nome=cliente_nome,
         forma_pagamento=dados.forma_pagamento.value if dados.forma_pagamento else None,
         desconto=dados.desconto,
         observacao=dados.observacao,

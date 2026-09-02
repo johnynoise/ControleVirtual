@@ -5,6 +5,8 @@ Cada item guarda retratos (snapshots) do nome do produto, do preço de venda e
 do custo médio no momento da venda, para o histórico e o cálculo de lucro
 permanecerem corretos mesmo que preços mudem depois.
 """
+from datetime import datetime
+
 from sqlalchemy import (
     Column,
     DateTime,
@@ -25,6 +27,11 @@ class Venda(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # Cliente vinculado (opcional). O nome é guardado como retrato (snapshot)
+    # para o histórico sobreviver mesmo se o cliente for removido.
+    cliente_id = Column(
+        Integer, ForeignKey("clientes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     cliente_nome = Column(String(200), nullable=True)
     forma_pagamento = Column(String(30), nullable=True)
 
@@ -37,8 +44,14 @@ class Venda(Base):
 
     observacao = Column(Text, nullable=True)
 
+    # Usa hora local (datetime.now) para o dashboard agrupar "hoje" corretamente,
+    # de forma consistente entre SQLite e PostgreSQL.
     criado_em = Column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+        DateTime(timezone=True),
+        default=datetime.now,
+        server_default=func.now(),
+        nullable=False,
+        index=True,
     )
 
     itens = relationship(
@@ -47,6 +60,7 @@ class Venda(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    cliente = relationship("Cliente")
 
 
 class ItemVenda(Base):
