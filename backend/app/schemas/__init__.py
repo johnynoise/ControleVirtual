@@ -6,6 +6,7 @@ from app.schemas.categoria import (
     CategoriaUpdate,
     TipoCampo,
 )
+from app.schemas.cliente import ClienteCreate, ClienteOut, ClienteUpdate
 from app.schemas.fornecedor import (
     FornecedorCreate,
     FornecedorOut,
@@ -53,4 +54,7 @@ __all__ = [
     "ItemVendaOut",
     "VendaCreate",
     "VendaOut",
+    "ClienteCreate",
+    "ClienteUpdate",
+    "ClienteOut",
 ]

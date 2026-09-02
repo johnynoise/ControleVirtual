@@ -6,7 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import categorias, fornecedores, movimentacoes, produtos, vendas
+from app.routers import (
+    categorias,
+    clientes,
+    fornecedores,
+    movimentacoes,
+    produtos,
+    relatorios,
+    vendas,
+)
 
 # Importa os models para que fiquem registrados no metadata do SQLAlchemy.
 from app import models  # noqa: F401
@@ -46,7 +54,9 @@ app.include_router(categorias.router)
 app.include_router(produtos.router)
 app.include_router(movimentacoes.router)
 app.include_router(fornecedores.router)
+app.include_router(clientes.router)
 app.include_router(vendas.router)
+app.include_router(relatorios.router)
 
 
 @app.get("/")

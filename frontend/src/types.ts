@@ -168,6 +168,7 @@ export interface ItemVendaCreate {
 
 export interface Venda {
   id: number;
+  cliente_id?: number | null;
   cliente_nome?: string | null;
   forma_pagamento?: string | null;
   total_bruto: string;
@@ -182,9 +183,74 @@ export interface Venda {
 }
 
 export interface VendaCreate {
+  cliente_id?: number | null;
   cliente_nome?: string | null;
   forma_pagamento?: FormaPagamento | null;
   desconto: number;
   observacao?: string | null;
   itens: ItemVendaCreate[];
+}
+
+export interface Cliente {
+  id: number;
+  nome: string;
+  telefone?: string | null;
+  email?: string | null;
+  ativo: boolean;
+  criado_em: string;
+  atualizado_em: string;
+}
+
+export interface ClienteCreate {
+  nome: string;
+  telefone?: string | null;
+  email?: string | null;
+  ativo: boolean;
+}
+
+export interface ResumoPeriodo {
+  dias: number;
+  inicio: string;
+  num_vendas: number;
+  faturamento: string;
+  custo: string;
+  lucro: string;
+  desconto: string;
+  ticket_medio: string;
+  margem_percentual: string;
+}
+
+export interface VendaDia {
+  dia: string;
+  faturamento: string;
+  lucro: string;
+  num_vendas: number;
+}
+
+export interface ProdutoRanking {
+  produto_id: number | null;
+  produto_nome: string;
+  quantidade: number;
+  faturamento: string;
+  lucro: string;
+}
+
+export interface MaisVendidos {
+  por_quantidade: ProdutoRanking[];
+  por_lucro: ProdutoRanking[];
+}
+
+export interface ItemEstoqueBaixo {
+  produto_id: number;
+  nome: string;
+  estoque: number;
+  estoque_minimo: number;
+}
+
+export interface ResumoEstoque {
+  num_produtos: number;
+  valor_custo_total: string;
+  valor_venda_total: string;
+  qtd_estoque_baixo: number;
+  itens_estoque_baixo: ItemEstoqueBaixo[];
 }

@@ -5,19 +5,23 @@ import ProdutosPage from "./pages/ProdutosPage";
 import MovimentacoesPage from "./pages/MovimentacoesPage";
 import FornecedoresPage from "./pages/FornecedoresPage";
 import VendasPage from "./pages/VendasPage";
+import ClientesPage from "./pages/ClientesPage";
+import DashboardPage from "./pages/DashboardPage";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/vendas" replace />} />
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardPage />} />
           <Route path="vendas" element={<VendasPage />} />
           <Route path="produtos" element={<ProdutosPage />} />
           <Route path="movimentacoes" element={<MovimentacoesPage />} />
           <Route path="fornecedores" element={<FornecedoresPage />} />
+          <Route path="clientes" element={<ClientesPage />} />
           <Route path="categorias" element={<CategoriasPage />} />
-          <Route path="*" element={<Navigate to="/vendas" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

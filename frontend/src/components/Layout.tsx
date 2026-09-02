@@ -17,10 +17,12 @@ export default function Layout() {
       <header className="topbar">
         <div className="brand">ControleVirtual</div>
         <nav className="nav">
+          <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/vendas">Vendas</NavLink>
           <NavLink to="/produtos">Produtos</NavLink>
           <NavLink to="/movimentacoes">Movimentações</NavLink>
           <NavLink to="/fornecedores">Fornecedores</NavLink>
+          <NavLink to="/clientes">Clientes</NavLink>
           <NavLink to="/categorias">Categorias</NavLink>
         </nav>
         <span className={`api-badge ${apiStatus === "ok" ? "ok" : "off"}`}>
