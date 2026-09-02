@@ -134,10 +134,18 @@ export default function FornecedoresPage() {
 
   return (
     <div className="page">
-      <h1>Fornecedores</h1>
+      <div className="page-title">
+        <span className="title-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9l1.5-4.5A1.5 1.5 0 0 1 6 3.5h12a1.5 1.5 0 0 1 1.5 1L21 9" />
+            <path d="M3 9h18v3a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z" />
+            <path d="M4 12v8h16v-8" />
+          </svg>
+        </span>
+        <h1>Fornecedores</h1>
+      </div>
       <p className="subtitle">
-        Cadastro dos seus fornecedores. Depois eles poderão ser vinculados às entradas de
-        compra no estoque.
+        Quem fornece seus produtos. Você pode vinculá-los às entradas de compra no estoque.
       </p>
 
       {erro && <div className="alert erro">{erro}</div>}

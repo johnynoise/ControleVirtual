@@ -186,10 +186,18 @@ export default function ProdutosPage() {
 
   return (
     <div className="page">
-      <h1>Produtos</h1>
+      <div className="page-title">
+        <span className="title-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2 3 7v10l9 5 9-5V7z" />
+            <path d="M3 7l9 5 9-5" />
+            <path d="M12 12v10" />
+          </svg>
+        </span>
+        <h1>Produtos</h1>
+      </div>
       <p className="subtitle">
-        Escolha a categoria e o formulário se adapta aos campos dela. A margem é calculada
-        automaticamente.
+        Cadastre o que você vende. A margem de lucro é calculada automaticamente.
       </p>
 
       {erro && <div className="alert erro">{erro}</div>}

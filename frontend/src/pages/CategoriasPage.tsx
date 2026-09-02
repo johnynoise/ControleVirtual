@@ -121,10 +121,20 @@ export default function CategoriasPage() {
 
   return (
     <div className="page">
-      <h1>Categorias</h1>
+      <div className="page-title">
+        <span className="title-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+            <rect x="14" y="14" width="7" height="7" rx="1.5" />
+          </svg>
+        </span>
+        <h1>Categorias</h1>
+      </div>
       <p className="subtitle">
-        Cada categoria define os campos que seus produtos terão. É esse esquema que monta o
-        formulário de produto automaticamente.
+        Cada categoria define os campos dos seus produtos e monta o formulário
+        automaticamente.
       </p>
 
       {erro && <div className="alert erro">{erro}</div>}

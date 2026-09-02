@@ -133,10 +133,20 @@ export default function MovimentacoesPage() {
 
   return (
     <div className="page">
-      <h1>Movimentações de estoque</h1>
+      <div className="page-title">
+        <span className="title-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 3l4 4-4 4" />
+            <path d="M21 7H7" />
+            <path d="M7 21l-4-4 4-4" />
+            <path d="M3 17h14" />
+          </svg>
+        </span>
+        <h1>Estoque</h1>
+      </div>
       <p className="subtitle">
-        Registre entradas, saídas e ajustes. O estoque do produto é atualizado na hora e tudo
-        fica no histórico. Em entradas com custo, o custo médio do produto é recalculado.
+        Registre o que entra e o que sai. O estoque é atualizado na hora e tudo fica no
+        histórico.
       </p>
 
       {erro && <div className="alert erro">{erro}</div>}

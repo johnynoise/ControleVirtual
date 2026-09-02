@@ -107,9 +107,19 @@ export default function ClientesPage() {
 
   return (
     <div className="page">
-      <h1>Clientes</h1>
+      <div className="page-title">
+        <span className="title-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="9" cy="8" r="3.5" />
+            <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+            <path d="M16 4.5a3.5 3.5 0 0 1 0 7" />
+            <path d="M17.5 13.5a6.5 6.5 0 0 1 4 6.5" />
+          </svg>
+        </span>
+        <h1>Clientes</h1>
+      </div>
       <p className="subtitle">
-        Cadastro simples de clientes. Eles podem ser vinculados às vendas no PDV.
+        Cadastro simples de clientes. Eles podem ser vinculados às vendas.
       </p>
 
       {erro && <div className="alert erro">{erro}</div>}
