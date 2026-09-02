@@ -208,6 +208,28 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.linha-inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.linha-inline select {
+  flex: 1;
+}
+
+.novo-cliente {
+  background: var(--cinza-fundo);
+  border: 1px dashed var(--cinza-borda);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.novo-cliente h3 {
+  margin: 0 0 0.75rem;
+}
+
 .margem-preview {
   display: flex;
   gap: 1.5rem;
@@ -383,5 +405,119 @@ body {
   }
   .campo-row {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard                                                          */
+/* ------------------------------------------------------------------ */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.periodo-tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.kpi {
+  background: #fff;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.kpi-label {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.kpi-valor {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.kpi-valor.verde {
+  color: var(--verde);
+}
+
+.kpi-valor.vermelho {
+  color: var(--vermelho);
+}
+
+.kpi-sub {
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+.grid-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+/* Gráfico de barras simples (sem biblioteca) */
+.grafico-barras {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 200px;
+  padding-top: 1rem;
+}
+
+.barra-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 0.25rem;
+}
+
+.barra {
+  width: 70%;
+  min-height: 2px;
+  background: var(--azul);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.2s;
+}
+
+.barra-col:hover .barra {
+  background: var(--azul-escuro);
+}
+
+.barra-valor {
+  font-size: 0.65rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.barra-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+@media (max-width: 720px) {
+  .kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+  .grid-cards {
+    grid-template-columns: 1fr;
   }
 }
