@@ -10,6 +10,7 @@ import type {
 import { listarProdutos } from "../services/produtos";
 import { criarCliente, listarClientes } from "../services/clientes";
 import { criarVenda, listarVendas } from "../services/vendas";
+import Recibo from "../components/Recibo";
 
 const PAGAMENTOS: { valor: FormaPagamento; rotulo: string }[] = [
   { valor: "dinheiro", rotulo: "Dinheiro" },
@@ -70,6 +71,9 @@ export default function VendasPage() {
   const [ncTelefone, setNcTelefone] = useState("");
   const [ncEmail, setNcEmail] = useState("");
   const [salvandoCliente, setSalvandoCliente] = useState(false);
+
+  // Venda exibida no recibo (após finalizar ou ao reimprimir do histórico).
+  const [vendaRecibo, setVendaRecibo] = useState<Venda | null>(null);
 
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) ?? null;
 
@@ -217,9 +221,11 @@ export default function VendasPage() {
     };
 
     try {
-      await criarVenda(payload);
+      const venda = await criarVenda(payload);
       limparVenda();
       await carregar();
+      // Abre o recibo da venda recém-finalizada.
+      setVendaRecibo(venda);
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -229,10 +235,18 @@ export default function VendasPage() {
 
   return (
     <div className="page">
-      <h1>Vendas (PDV)</h1>
+      <div className="page-title">
+        <span className="title-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="9" cy="20" r="1.5" />
+            <circle cx="18" cy="20" r="1.5" />
+            <path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
+          </svg>
+        </span>
+        <h1>Nova venda</h1>
+      </div>
       <p className="subtitle">
-        Monte o carrinho, informe o pagamento e finalize. O estoque baixa automaticamente e o
-        lucro é calculado pelo custo médio de cada produto.
+        Escolha os produtos, veja o total e finalize. O estoque é atualizado sozinho.
       </p>
 
       {erro && <div className="alert erro">{erro}</div>}
@@ -244,7 +258,7 @@ export default function VendasPage() {
       )}
 
       <div className="card form">
-        <h2>Nova venda</h2>
+        <h2>1. Adicione os produtos</h2>
 
         <div className="grid-4">
           <label style={{ gridColumn: "span 2" }}>
@@ -286,7 +300,7 @@ export default function VendasPage() {
         </div>
 
         <div className="form-acoes">
-          <button type="button" className="btn secundario" onClick={adicionarAoCarrinho}>
+          <button type="button" className="btn primario" onClick={adicionarAoCarrinho}>
             + Adicionar ao carrinho
           </button>
         </div>
@@ -323,6 +337,7 @@ export default function VendasPage() {
           </table>
         )}
 
+        <h3>2. Cliente e pagamento (opcional)</h3>
         <div className="grid-4">
           <label style={{ gridColumn: "span 2" }}>
             Cliente
@@ -441,11 +456,11 @@ export default function VendasPage() {
 
         <div className="form-acoes">
           <button
-            className="btn primario"
+            className="btn primario grande"
             onClick={finalizar}
             disabled={salvando || carrinho.length === 0}
           >
-            {salvando ? "Finalizando..." : "Finalizar venda"}
+            {salvando ? "Finalizando..." : `Finalizar venda · ${brl(totalLiquido)}`}
           </button>
           {carrinho.length > 0 && (
             <button type="button" className="btn secundario" onClick={limparVenda}>
@@ -472,6 +487,7 @@ export default function VendasPage() {
                 <th>Total</th>
                 <th>Lucro</th>
                 <th>Margem</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -493,12 +509,38 @@ export default function VendasPage() {
                   </td>
                   <td>{brl(v.lucro)}</td>
                   <td>{v.margem_percentual}%</td>
+                  <td className="acoes">
+                    <button
+                      className="btn secundario pequeno"
+                      onClick={() => setVendaRecibo(v)}
+                    >
+                      Recibo
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {vendaRecibo && (
+        <div className="recibo-overlay" onClick={() => setVendaRecibo(null)}>
+          <div className="recibo-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="recibo-area">
+              <Recibo venda={vendaRecibo} />
+            </div>
+            <div className="recibo-acoes no-print">
+              <button className="btn primario" onClick={() => window.print()}>
+                Imprimir
+              </button>
+              <button className="btn secundario" onClick={() => setVendaRecibo(null)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
