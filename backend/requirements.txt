@@ -2,7 +2,12 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 sqlalchemy==2.0.36
 alembic==1.14.0
-psycopg2-binary==2.9.10
-pydantic==2.10.4
-pydantic-settings==2.7.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
 python-dotenv==1.0.1
+
+# PostgreSQL (produção). No Python 3.14 o psycopg2-binary 2.9.10 ainda não tem
+# wheel pré-compilado e exige compilador/pg_config para build a partir do fonte.
+# Para desenvolvimento local o padrão é SQLite, então esta dependência é opcional.
+# Descomente ao usar PostgreSQL (idealmente num Python <= 3.13 com wheel disponível):
+# psycopg2-binary==2.9.10

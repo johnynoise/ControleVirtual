@@ -44,6 +44,11 @@ class Venda(Base):
 
     observacao = Column(Text, nullable=True)
 
+    # Estorno (cancelamento) da venda. Quando preenchido, a venda deixa de
+    # contar nos relatórios e o estoque dos itens já foi devolvido.
+    cancelada_em = Column(DateTime(timezone=True), nullable=True, index=True)
+    motivo_cancelamento = Column(String(200), nullable=True)
+
     # Usa hora local (datetime.now) para o dashboard agrupar "hoje" corretamente,
     # de forma consistente entre SQLite e PostgreSQL.
     criado_em = Column(
@@ -59,6 +64,13 @@ class Venda(Base):
         back_populates="venda",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    devolucoes = relationship(
+        "Devolucao",
+        back_populates="venda",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Devolucao.criado_em",
     )
     cliente = relationship("Cliente")
 

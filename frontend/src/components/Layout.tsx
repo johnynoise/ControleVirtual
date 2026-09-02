@@ -57,6 +57,12 @@ const icones: Record<string, ReactNode> = {
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
+  relatorios: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-4 3 3 5-6" />
+    </svg>
+  ),
 };
 
 const LINKS: { to: string; rotulo: string; icone: keyof typeof icones }[] = [
@@ -67,6 +73,7 @@ const LINKS: { to: string; rotulo: string; icone: keyof typeof icones }[] = [
   { to: "/fornecedores", rotulo: "Fornecedores", icone: "fornecedores" },
   { to: "/clientes", rotulo: "Clientes", icone: "clientes" },
   { to: "/categorias", rotulo: "Categorias", icone: "categorias" },
+  { to: "/relatorios", rotulo: "Relatórios", icone: "relatorios" },
 ];
 
 export default function Layout() {

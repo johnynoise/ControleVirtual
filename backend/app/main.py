@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from app.config import settings
 from app.database import Base, engine
@@ -28,6 +29,36 @@ app = FastAPI(
 )
 
 
+def _migrar_colunas() -> None:
+    """Adiciona colunas novas a tabelas já existentes (mini-migração).
+
+    O ``create_all`` cria tabelas que faltam, mas não altera as existentes.
+    Enquanto o projeto não adota Alembic, adicionamos colunas novas aqui de
+    forma idempotente. ``ADD COLUMN`` é suportado por SQLite e PostgreSQL.
+    """
+    novas_colunas = {
+        "vendas": {
+            "cancelada_em": "TIMESTAMP",
+            "motivo_cancelamento": "VARCHAR(200)",
+        },
+    }
+    try:
+        insp = inspect(engine)
+        for tabela, colunas in novas_colunas.items():
+            if not insp.has_table(tabela):
+                continue
+            existentes = {c["name"] for c in insp.get_columns(tabela)}
+            with engine.begin() as conn:
+                for coluna, tipo in colunas.items():
+                    if coluna not in existentes:
+                        conn.execute(
+                            text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+                        )
+                        logger.info("Coluna %s.%s adicionada.", tabela, coluna)
+    except Exception as exc:  # pragma: no cover - depende do banco estar de pé
+        logger.warning("Não foi possível migrar colunas no startup: %s", exc)
+
+
 @app.on_event("startup")
 def criar_tabelas() -> None:
     """Cria as tabelas no banco caso ainda não existam.
@@ -37,6 +68,7 @@ def criar_tabelas() -> None:
     """
     try:
         Base.metadata.create_all(bind=engine)
+        _migrar_colunas()
     except Exception as exc:  # pragma: no cover - depende do banco estar de pé
         logger.warning("Não foi possível criar as tabelas no startup: %s", exc)
 

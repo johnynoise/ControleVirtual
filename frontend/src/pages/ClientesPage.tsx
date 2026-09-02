@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import type { Cliente, ClienteCreate } from "../types";
 import {
   atualizarCliente,
@@ -6,29 +7,28 @@ import {
   listarClientes,
   removerCliente,
 } from "../services/clientes";
-
-function extrairErro(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
-    ?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail) && detail.length > 0) {
-    return detail.map((d: { msg?: string }) => d.msg ?? "").join("; ");
-  }
-  return "Não foi possível concluir a operação.";
-}
+import { corAvatar, extrairErro, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
 
 function formVazio(): ClienteCreate {
   return { nome: "", telefone: "", email: "", ativo: true };
 }
+
+type FiltroStatus = "todos" | "ativos" | "inativos";
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
+  // Modal de cadastro/edição.
+  const [modalAberto, setModalAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<ClienteCreate>(formVazio());
   const [salvando, setSalvando] = useState(false);
+
+  // Busca e filtro.
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState<FiltroStatus>("todos");
 
   async function carregar() {
     setCarregando(true);
@@ -46,12 +46,28 @@ export default function ClientesPage() {
     carregar();
   }, []);
 
-  function limpar() {
+  const clientesFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    return clientes.filter((c) => {
+      if (filtro === "ativos" && !c.ativo) return false;
+      if (filtro === "inativos" && c.ativo) return false;
+      if (!termo) return true;
+      return (
+        c.nome.toLowerCase().includes(termo) ||
+        (c.telefone ?? "").toLowerCase().includes(termo) ||
+        (c.email ?? "").toLowerCase().includes(termo)
+      );
+    });
+  }, [clientes, busca, filtro]);
+
+  function abrirNovo() {
     setEditandoId(null);
     setForm(formVazio());
+    setErro(null);
+    setModalAberto(true);
   }
 
-  function editar(c: Cliente) {
+  function abrirEditar(c: Cliente) {
     setEditandoId(c.id);
     setForm({
       nome: c.nome,
@@ -59,7 +75,14 @@ export default function ClientesPage() {
       email: c.email ?? "",
       ativo: c.ativo,
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setErro(null);
+    setModalAberto(true);
+  }
+
+  function fecharModal() {
+    setModalAberto(false);
+    setEditandoId(null);
+    setForm(formVazio());
   }
 
   function setCampo<K extends keyof ClienteCreate>(chave: K, valor: ClienteCreate[K]) {
@@ -84,7 +107,7 @@ export default function ClientesPage() {
       } else {
         await atualizarCliente(editandoId, payload);
       }
-      limpar();
+      fecharModal();
       await carregar();
     } catch (err) {
       setErro(extrairErro(err));
@@ -98,123 +121,216 @@ export default function ClientesPage() {
     setErro(null);
     try {
       await removerCliente(c.id);
-      if (editandoId === c.id) limpar();
       await carregar();
     } catch (err) {
       setErro(extrairErro(err));
     }
   }
 
+  const filtros: { valor: FiltroStatus; rotulo: string }[] = [
+    { valor: "todos", rotulo: "Todos" },
+    { valor: "ativos", rotulo: "Ativos" },
+    { valor: "inativos", rotulo: "Inativos" },
+  ];
+
   return (
     <div className="page">
-      <div className="page-title">
-        <span className="title-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="9" cy="8" r="3.5" />
-            <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
-            <path d="M16 4.5a3.5 3.5 0 0 1 0 7" />
-            <path d="M17.5 13.5a6.5 6.5 0 0 1 4 6.5" />
-          </svg>
-        </span>
-        <h1>Clientes</h1>
+      <div className="page-header">
+        <div className="page-title">
+          <span className="title-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="9" cy="8" r="3.5" />
+              <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+              <path d="M16 4.5a3.5 3.5 0 0 1 0 7" />
+              <path d="M17.5 13.5a6.5 6.5 0 0 1 4 6.5" />
+            </svg>
+          </span>
+          <h1>Clientes</h1>
+        </div>
+        <button className="btn primario" onClick={abrirNovo}>
+          + Novo cliente
+        </button>
       </div>
-      <p className="subtitle">
-        Cadastro simples de clientes. Eles podem ser vinculados às vendas.
-      </p>
 
-      {erro && <div className="alert erro">{erro}</div>}
+      {erro && !modalAberto && <div className="alert erro">{erro}</div>}
 
-      <form className="card form" onSubmit={salvar}>
-        <h2>{editandoId === null ? "Novo cliente" : "Editar cliente"}</h2>
-
-        <div className="grid-4">
-          <label style={{ gridColumn: "span 2" }}>
-            Nome
-            <input
-              value={form.nome}
-              onChange={(e) => setCampo("nome", e.target.value)}
-              placeholder="Ex.: Maria Silva"
-              required
-            />
-          </label>
-          <label>
-            Telefone
-            <input
-              value={form.telefone ?? ""}
-              onChange={(e) => setCampo("telefone", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            E-mail
-            <input
-              type="email"
-              value={form.email ?? ""}
-              onChange={(e) => setCampo("email", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-        </div>
-
-        <label className="check">
+      <div className="toolbar">
+        <div className="busca">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4-4" />
+          </svg>
           <input
-            type="checkbox"
-            checked={form.ativo}
-            onChange={(e) => setCampo("ativo", e.target.checked)}
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por nome, telefone ou e-mail..."
           />
-          Cliente ativo
-        </label>
-
-        <div className="form-acoes">
-          <button className="btn primario" type="submit" disabled={salvando}>
-            {salvando ? "Salvando..." : editandoId === null ? "Criar cliente" : "Salvar"}
-          </button>
-          {editandoId !== null && (
-            <button type="button" className="btn secundario" onClick={limpar}>
-              Cancelar
-            </button>
-          )}
         </div>
-      </form>
+        <div className="periodo-tabs">
+          {filtros.map((f) => (
+            <button
+              key={f.valor}
+              className={`btn ${filtro === f.valor ? "primario" : "secundario"} pequeno`}
+              onClick={() => setFiltro(f.valor)}
+            >
+              {f.rotulo}
+            </button>
+          ))}
+        </div>
+        <span className="contagem">
+          {clientesFiltrados.length}{" "}
+          {clientesFiltrados.length === 1 ? "cliente" : "clientes"}
+        </span>
+      </div>
 
       <div className="card">
-        <h2>Clientes cadastrados</h2>
         {carregando ? (
           <p className="vazio">Carregando...</p>
         ) : clientes.length === 0 ? (
-          <p className="vazio">Nenhum cliente ainda.</p>
+          <p className="vazio">
+            Nenhum cliente cadastrado. Clique em "+ Novo cliente" para começar.
+          </p>
+        ) : clientesFiltrados.length === 0 ? (
+          <p className="vazio">Nenhum cliente encontrado para esse filtro.</p>
         ) : (
           <table className="tabela">
             <thead>
               <tr>
-                <th>Nome</th>
-                <th>Telefone</th>
-                <th>E-mail</th>
+                <th>Cliente</th>
+                <th>Contato</th>
+                <th>Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {clientes.map((c) => (
-                <tr key={c.id} className={c.ativo ? "" : "inativo"}>
-                  <td>
-                    <strong>{c.nome}</strong>
-                  </td>
-                  <td>{c.telefone ?? <span className="muted">—</span>}</td>
-                  <td>{c.email ?? <span className="muted">—</span>}</td>
-                  <td className="acoes">
-                    <button className="btn secundario pequeno" onClick={() => editar(c)}>
-                      Editar
-                    </button>
-                    <button className="btn perigo pequeno" onClick={() => excluir(c)}>
-                      Excluir
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {clientesFiltrados.map((c) => {
+                const wpp = linkWhatsapp(c.telefone);
+                return (
+                  <tr key={c.id} className={c.ativo ? "" : "inativo"}>
+                    <td>
+                      <div className="cliente-cell">
+                        <span
+                          className="avatar"
+                          style={{ background: corAvatar(c.nome) }}
+                        >
+                          {iniciais(c.nome)}
+                        </span>
+                        <Link to={`/clientes/${c.id}`} className="link-forte">
+                          {c.nome}
+                        </Link>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="contato-linha">
+                        <span>
+                          {c.telefone ?? <span className="muted">Sem telefone</span>}
+                        </span>
+                        {c.email && <span className="muted">{c.email}</span>}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`chip ${c.ativo ? "status-ativo" : "status-inativo"}`}>
+                        {c.ativo ? "Ativo" : "Inativo"}
+                      </span>
+                    </td>
+                    <td className="acoes">
+                      {wpp && (
+                        <a
+                          className="icone-acao"
+                          href={wpp}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Chamar no WhatsApp"
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d={WHATSAPP_PATH} />
+                          </svg>
+                        </a>
+                      )}
+                      <Link className="btn primario pequeno" to={`/clientes/${c.id}`}>
+                        Ficha
+                      </Link>
+                      <button className="btn secundario pequeno" onClick={() => abrirEditar(c)}>
+                        Editar
+                      </button>
+                      <button className="btn perigo pequeno" onClick={() => excluir(c)}>
+                        Excluir
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {modalAberto && (
+        <div className="recibo-overlay" onClick={fecharModal}>
+          <form
+            className="modal-box form"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={salvar}
+          >
+            <h2>{editandoId === null ? "Novo cliente" : "Editar cliente"}</h2>
+
+            {erro && <div className="alert erro">{erro}</div>}
+
+            <label style={{ marginBottom: "1rem" }}>
+              Nome
+              <input
+                value={form.nome}
+                onChange={(e) => setCampo("nome", e.target.value)}
+                placeholder="Ex.: Maria Silva"
+                required
+                autoFocus
+              />
+            </label>
+
+            <div className="grid-2">
+              <label>
+                Telefone
+                <input
+                  value={form.telefone ?? ""}
+                  onChange={(e) => setCampo("telefone", e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+              <label>
+                E-mail
+                <input
+                  type="email"
+                  value={form.email ?? ""}
+                  onChange={(e) => setCampo("email", e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+            </div>
+
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.ativo}
+                onChange={(e) => setCampo("ativo", e.target.checked)}
+              />
+              Cliente ativo
+            </label>
+
+            <div className="form-acoes">
+              <button className="btn primario" type="submit" disabled={salvando}>
+                {salvando
+                  ? "Salvando..."
+                  : editandoId === null
+                    ? "Criar cliente"
+                    : "Salvar"}
+              </button>
+              <button type="button" className="btn secundario" onClick={fecharModal}>
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

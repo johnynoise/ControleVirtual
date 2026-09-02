@@ -9,12 +9,21 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.categoria import Categoria
+from app.models.cliente import Cliente
+from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import Produto
 from app.models.venda import ItemVenda, Venda
 
 _CENTAVOS = Decimal("0.01")
+
+
+def _q(valor) -> Decimal:
+    """Converte para Decimal com 2 casas (dinheiro)."""
+    return Decimal(valor or 0).quantize(_CENTAVOS)
 
 
 def _inicio_periodo(dias: int) -> datetime:
@@ -25,7 +34,12 @@ def _inicio_periodo(dias: int) -> datetime:
 
 
 def _vendas_periodo(db: Session, inicio: datetime) -> list[Venda]:
-    return db.query(Venda).filter(Venda.criado_em >= inicio).all()
+    # Ignora vendas estornadas (canceladas) em todos os relatórios.
+    return (
+        db.query(Venda)
+        .filter(Venda.criado_em >= inicio, Venda.cancelada_em.is_(None))
+        .all()
+    )
 
 
 def resumo(db: Session, dias: int) -> dict:
@@ -96,7 +110,11 @@ def mais_vendidos(db: Session, dias: int, limite: int = 10) -> dict:
     itens = (
         db.query(ItemVenda)
         .join(Venda, ItemVenda.venda_id == Venda.id)
-        .filter(Venda.criado_em >= inicio)
+        .filter(
+            Venda.criado_em >= inicio,
+            Venda.cancelada_em.is_(None),
+            ItemVenda.quantidade > 0,
+        )
         .all()
     )
 
@@ -155,4 +173,674 @@ def estoque(db: Session) -> dict:
         "valor_venda_total": valor_venda.quantize(_CENTAVOS),
         "qtd_estoque_baixo": len(baixos),
         "itens_estoque_baixo": baixos,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Relatórios da seção "Relatórios" (além do dashboard).
+# ---------------------------------------------------------------------------
+
+# Rótulos amigáveis das formas de pagamento (a coluna guarda o valor "cru").
+_FORMAS_PAGAMENTO = {
+    "dinheiro": "Dinheiro",
+    "cartao_credito": "Cartão de crédito",
+    "cartao_debito": "Cartão de débito",
+    "pix": "Pix",
+    "outro": "Outro",
+}
+
+
+def vendas_por_forma_pagamento(db: Session, dias: int) -> dict:
+    """Mix de faturamento por forma de pagamento no período."""
+    inicio = _inicio_periodo(dias)
+    vendas = _vendas_periodo(db, inicio)
+
+    agregado: dict = defaultdict(
+        lambda: {"num_vendas": 0, "faturamento": Decimal("0")}
+    )
+    for v in vendas:
+        chave = v.forma_pagamento or "outro"
+        agregado[chave]["num_vendas"] += 1
+        agregado[chave]["faturamento"] += v.total_liquido or 0
+
+    faturamento_total = sum((r["faturamento"] for r in agregado.values()), Decimal("0"))
+
+    linhas: list[dict] = []
+    for chave, dados in agregado.items():
+        fat = _q(dados["faturamento"])
+        pct = (fat / faturamento_total * 100).quantize(_CENTAVOS) if faturamento_total > 0 else Decimal("0.00")
+        linhas.append(
+            {
+                "forma": chave,
+                "forma_rotulo": _FORMAS_PAGAMENTO.get(chave, chave.title()),
+                "num_vendas": dados["num_vendas"],
+                "faturamento": fat,
+                "percentual": pct,
+            }
+        )
+
+    linhas.sort(key=lambda x: x["faturamento"], reverse=True)
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "faturamento_total": _q(faturamento_total),
+        "linhas": linhas,
+    }
+
+
+def curva_abc(db: Session, dias: int) -> dict:
+    """Curva ABC de produtos por faturamento no período.
+
+    Classe A: produtos que somam até 80% do faturamento acumulado.
+    Classe B: de 80% a 95%. Classe C: os demais.
+    """
+    inicio = _inicio_periodo(dias)
+    itens = (
+        db.query(ItemVenda)
+        .join(Venda, ItemVenda.venda_id == Venda.id)
+        .filter(
+            Venda.criado_em >= inicio,
+            Venda.cancelada_em.is_(None),
+            ItemVenda.quantidade > 0,
+        )
+        .all()
+    )
+
+    agregado: dict = {}
+    for item in itens:
+        chave = item.produto_id if item.produto_id is not None else f"nome:{item.produto_nome}"
+        registro = agregado.setdefault(
+            chave,
+            {
+                "produto_id": item.produto_id,
+                "produto_nome": item.produto_nome,
+                "quantidade": 0,
+                "faturamento": Decimal("0"),
+            },
+        )
+        registro["quantidade"] += item.quantidade
+        registro["faturamento"] += item.subtotal or 0
+
+    lista = sorted(agregado.values(), key=lambda r: r["faturamento"], reverse=True)
+    faturamento_total = sum((r["faturamento"] for r in lista), Decimal("0"))
+
+    acumulado = Decimal("0")
+    linhas: list[dict] = []
+    contagem = {"A": 0, "B": 0, "C": 0}
+    for r in lista:
+        fat = _q(r["faturamento"])
+        acumulado += r["faturamento"]
+        pct = (fat / faturamento_total * 100).quantize(_CENTAVOS) if faturamento_total > 0 else Decimal("0.00")
+        pct_acum = (
+            (acumulado / faturamento_total * 100).quantize(_CENTAVOS)
+            if faturamento_total > 0
+            else Decimal("0.00")
+        )
+        if pct_acum <= Decimal("80"):
+            classe = "A"
+        elif pct_acum <= Decimal("95"):
+            classe = "B"
+        else:
+            classe = "C"
+        contagem[classe] += 1
+        linhas.append(
+            {
+                "produto_id": r["produto_id"],
+                "produto_nome": r["produto_nome"],
+                "quantidade": r["quantidade"],
+                "faturamento": fat,
+                "percentual": pct,
+                "percentual_acumulado": pct_acum,
+                "classe": classe,
+            }
+        )
+
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "faturamento_total": _q(faturamento_total),
+        "qtd_classe_a": contagem["A"],
+        "qtd_classe_b": contagem["B"],
+        "qtd_classe_c": contagem["C"],
+        "linhas": linhas,
+    }
+
+
+def produtos_sem_giro(db: Session, dias: int) -> dict:
+    """Produtos ativos sem nenhuma venda no período (capital parado)."""
+    inicio = _inicio_periodo(dias)
+
+    # Produtos vendidos no período (para excluí-los da lista).
+    vendidos_periodo = {
+        pid
+        for (pid,) in db.query(ItemVenda.produto_id)
+        .join(Venda, ItemVenda.venda_id == Venda.id)
+        .filter(
+            Venda.criado_em >= inicio,
+            Venda.cancelada_em.is_(None),
+            ItemVenda.produto_id.isnot(None),
+            ItemVenda.quantidade > 0,
+        )
+        .distinct()
+        .all()
+    }
+
+    # Data da última venda de cada produto (de qualquer período).
+    ultima_venda = dict(
+        db.query(ItemVenda.produto_id, func.max(Venda.criado_em))
+        .join(Venda, ItemVenda.venda_id == Venda.id)
+        .filter(ItemVenda.produto_id.isnot(None), Venda.cancelada_em.is_(None))
+        .group_by(ItemVenda.produto_id)
+        .all()
+    )
+
+    produtos = db.query(Produto).filter(Produto.ativo.is_(True)).all()
+
+    hoje = date.today()
+    linhas: list[dict] = []
+    valor_parado_total = Decimal("0")
+    for p in produtos:
+        if p.id in vendidos_periodo:
+            continue
+        estoque_qtd = p.estoque or 0
+        valor_parado = _q((p.preco_custo or 0) * estoque_qtd)
+        valor_parado_total += valor_parado
+
+        ult = ultima_venda.get(p.id)
+        ult_data = ult.date() if ult else None
+        dias_sem_venda = (hoje - ult_data).days if ult_data else None
+
+        linhas.append(
+            {
+                "produto_id": p.id,
+                "produto_nome": p.nome,
+                "estoque": estoque_qtd,
+                "valor_parado": valor_parado,
+                "ultima_venda": ult_data,
+                "dias_sem_venda": dias_sem_venda,
+            }
+        )
+
+    # Ordena por maior capital parado (mais relevante primeiro).
+    linhas.sort(key=lambda x: x["valor_parado"], reverse=True)
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "qtd_produtos": len(linhas),
+        "valor_parado_total": _q(valor_parado_total),
+        "linhas": linhas,
+    }
+
+
+def kardex(db: Session, produto_id: int, dias: int = 90) -> dict:
+    """Extrato de movimentações de estoque de um produto (entradas/saídas/ajustes)."""
+    produto = db.get(Produto, produto_id)
+    inicio = _inicio_periodo(dias)
+
+    movimentacoes = (
+        db.query(MovimentacaoEstoque)
+        .filter(
+            MovimentacaoEstoque.produto_id == produto_id,
+            MovimentacaoEstoque.criado_em >= inicio,
+        )
+        .order_by(MovimentacaoEstoque.criado_em.asc(), MovimentacaoEstoque.id.asc())
+        .all()
+    )
+
+    total_entradas = sum(m.quantidade for m in movimentacoes if m.tipo == "entrada")
+    total_saidas = sum(m.quantidade for m in movimentacoes if m.tipo == "saida")
+
+    linhas = [
+        {
+            "id": m.id,
+            "criado_em": m.criado_em,
+            "tipo": m.tipo,
+            "quantidade": m.quantidade,
+            "estoque_resultante": m.estoque_resultante,
+            "motivo": m.motivo,
+            "fornecedor_nome": m.fornecedor_nome,
+            "custo_unitario": _q(m.custo_unitario) if m.custo_unitario is not None else None,
+        }
+        for m in movimentacoes
+    ]
+
+    return {
+        "produto_id": produto_id,
+        "produto_nome": produto.nome if produto else "(produto removido)",
+        "estoque_atual": produto.estoque if produto else None,
+        "dias": dias,
+        "inicio": inicio.date(),
+        "total_entradas": total_entradas,
+        "total_saidas": total_saidas,
+        "num_movimentacoes": len(linhas),
+        "linhas": linhas,
+    }
+
+
+def ranking_clientes(db: Session, dias: int, limite: int = 20) -> dict:
+    """Ranking de clientes por faturamento no período."""
+    inicio = _inicio_periodo(dias)
+    vendas = _vendas_periodo(db, inicio)
+
+    agregado: dict = {}
+    for v in vendas:
+        chave = v.cliente_id if v.cliente_id is not None else "sem_cliente"
+        registro = agregado.setdefault(
+            chave,
+            {
+                "cliente_id": v.cliente_id,
+                "cliente_nome": v.cliente_nome or "Sem cliente",
+                "num_compras": 0,
+                "faturamento": Decimal("0"),
+                "ultima_compra": None,
+            },
+        )
+        registro["num_compras"] += 1
+        registro["faturamento"] += v.total_liquido or 0
+        if registro["ultima_compra"] is None or v.criado_em > registro["ultima_compra"]:
+            registro["ultima_compra"] = v.criado_em
+
+    linhas: list[dict] = []
+    for r in agregado.values():
+        fat = _q(r["faturamento"])
+        num = r["num_compras"]
+        ticket = (fat / num).quantize(_CENTAVOS) if num else Decimal("0.00")
+        linhas.append(
+            {
+                "cliente_id": r["cliente_id"],
+                "cliente_nome": r["cliente_nome"],
+                "num_compras": num,
+                "faturamento": fat,
+                "ticket_medio": ticket,
+                "ultima_compra": r["ultima_compra"].date() if r["ultima_compra"] else None,
+            }
+        )
+
+    linhas.sort(key=lambda x: x["faturamento"], reverse=True)
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "qtd_clientes": len(linhas),
+        "linhas": linhas[:limite],
+    }
+
+
+def compras_por_fornecedor(db: Session, dias: int) -> dict:
+    """Total comprado por fornecedor (entradas de estoque) no período."""
+    inicio = _inicio_periodo(dias)
+    entradas = (
+        db.query(MovimentacaoEstoque)
+        .filter(
+            MovimentacaoEstoque.tipo == "entrada",
+            MovimentacaoEstoque.criado_em >= inicio,
+            # Entradas de estorno/devolução não são compras.
+            (MovimentacaoEstoque.motivo.is_(None))
+            | ~MovimentacaoEstoque.motivo.in_(["estorno", "devolucao"]),
+        )
+        .all()
+    )
+
+    agregado: dict = {}
+    for m in entradas:
+        chave = m.fornecedor_id if m.fornecedor_id is not None else "sem_fornecedor"
+        registro = agregado.setdefault(
+            chave,
+            {
+                "fornecedor_id": m.fornecedor_id,
+                "fornecedor_nome": m.fornecedor_nome or "Sem fornecedor",
+                "num_entradas": 0,
+                "quantidade_total": 0,
+                "valor_total": Decimal("0"),
+            },
+        )
+        registro["num_entradas"] += 1
+        registro["quantidade_total"] += m.quantidade
+        if m.custo_unitario is not None:
+            registro["valor_total"] += Decimal(m.custo_unitario) * m.quantidade
+
+    linhas = [
+        {
+            "fornecedor_id": r["fornecedor_id"],
+            "fornecedor_nome": r["fornecedor_nome"],
+            "num_entradas": r["num_entradas"],
+            "quantidade_total": r["quantidade_total"],
+            "valor_total": _q(r["valor_total"]),
+        }
+        for r in agregado.values()
+    ]
+    linhas.sort(key=lambda x: x["valor_total"], reverse=True)
+
+    valor_total_geral = sum((r["valor_total"] for r in linhas), Decimal("0"))
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "valor_total_geral": _q(valor_total_geral),
+        "linhas": linhas,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Segunda leva de relatórios.
+# ---------------------------------------------------------------------------
+
+_DIAS_SEMANA = [
+    "Segunda",
+    "Terça",
+    "Quarta",
+    "Quinta",
+    "Sexta",
+    "Sábado",
+    "Domingo",
+]
+
+
+def vendas_por_dia_semana_horario(db: Session, dias: int) -> dict:
+    """Distribui as vendas do período por dia da semana e por hora do dia."""
+    inicio = _inicio_periodo(dias)
+    vendas = _vendas_periodo(db, inicio)
+
+    por_semana = [
+        {"indice": i, "rotulo": nome, "num_vendas": 0, "faturamento": Decimal("0")}
+        for i, nome in enumerate(_DIAS_SEMANA)
+    ]
+    por_hora = [
+        {"hora": h, "num_vendas": 0, "faturamento": Decimal("0")} for h in range(24)
+    ]
+
+    for v in vendas:
+        fat = v.total_liquido or 0
+        dia_semana = v.criado_em.weekday()  # 0 = segunda
+        por_semana[dia_semana]["num_vendas"] += 1
+        por_semana[dia_semana]["faturamento"] += fat
+        hora = v.criado_em.hour
+        por_hora[hora]["num_vendas"] += 1
+        por_hora[hora]["faturamento"] += fat
+
+    for linha in por_semana:
+        linha["faturamento"] = _q(linha["faturamento"])
+    for linha in por_hora:
+        linha["faturamento"] = _q(linha["faturamento"])
+
+    # Destaques (melhor dia e melhor hora por faturamento).
+    melhor_dia = max(por_semana, key=lambda x: x["faturamento"], default=None)
+    melhor_hora = max(por_hora, key=lambda x: x["faturamento"], default=None)
+
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "por_dia_semana": por_semana,
+        "por_hora": por_hora,
+        "melhor_dia": melhor_dia["rotulo"] if melhor_dia and melhor_dia["num_vendas"] else None,
+        "melhor_hora": melhor_hora["hora"] if melhor_hora and melhor_hora["num_vendas"] else None,
+    }
+
+
+def descontos(db: Session, dias: int) -> dict:
+    """Resumo dos descontos concedidos e as vendas que os tiveram."""
+    inicio = _inicio_periodo(dias)
+    vendas = _vendas_periodo(db, inicio)
+
+    total_bruto = sum((v.total_bruto or 0) for v in vendas)
+    total_desconto = sum((v.desconto or 0) for v in vendas)
+    com_desconto = [v for v in vendas if (v.desconto or 0) > 0]
+
+    total_bruto = _q(total_bruto)
+    total_desconto = _q(total_desconto)
+    pct_medio = (
+        (total_desconto / total_bruto * 100).quantize(_CENTAVOS)
+        if total_bruto > 0
+        else Decimal("0.00")
+    )
+
+    linhas = []
+    for v in sorted(com_desconto, key=lambda x: (x.desconto or 0), reverse=True):
+        bruto = _q(v.total_bruto)
+        desc = _q(v.desconto)
+        pct = (desc / bruto * 100).quantize(_CENTAVOS) if bruto > 0 else Decimal("0.00")
+        linhas.append(
+            {
+                "venda_id": v.id,
+                "criado_em": v.criado_em,
+                "cliente_nome": v.cliente_nome or "Sem cliente",
+                "total_bruto": bruto,
+                "desconto": desc,
+                "percentual": pct,
+                "total_liquido": _q(v.total_liquido),
+            }
+        )
+
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "num_vendas": len(vendas),
+        "num_vendas_com_desconto": len(com_desconto),
+        "total_bruto": total_bruto,
+        "total_desconto": total_desconto,
+        "percentual_medio": pct_medio,
+        "linhas": linhas,
+    }
+
+
+def vendas_por_categoria(db: Session, dias: int) -> dict:
+    """Agrega faturamento, lucro e quantidade por categoria de produto."""
+    inicio = _inicio_periodo(dias)
+    itens = (
+        db.query(ItemVenda)
+        .join(Venda, ItemVenda.venda_id == Venda.id)
+        .filter(
+            Venda.criado_em >= inicio,
+            Venda.cancelada_em.is_(None),
+            ItemVenda.quantidade > 0,
+        )
+        .all()
+    )
+
+    # Mapa produto_id -> (categoria_id, categoria_nome) em uma query.
+    mapa_categoria: dict[int, tuple[int, str]] = {
+        pid: (cid, cnome)
+        for pid, cid, cnome in db.query(
+            Produto.id, Categoria.id, Categoria.nome
+        ).join(Categoria, Produto.categoria_id == Categoria.id)
+    }
+
+    agregado: dict = {}
+    for item in itens:
+        cat = mapa_categoria.get(item.produto_id) if item.produto_id else None
+        chave = cat[0] if cat else "sem"
+        nome = cat[1] if cat else "Sem categoria"
+        registro = agregado.setdefault(
+            chave,
+            {
+                "categoria_id": cat[0] if cat else None,
+                "categoria_nome": nome,
+                "quantidade": 0,
+                "faturamento": Decimal("0"),
+                "lucro": Decimal("0"),
+            },
+        )
+        registro["quantidade"] += item.quantidade
+        registro["faturamento"] += item.subtotal or 0
+        registro["lucro"] += (item.preco_unitario - item.custo_unitario) * item.quantidade
+
+    faturamento_total = sum((r["faturamento"] for r in agregado.values()), Decimal("0"))
+
+    linhas = []
+    for r in agregado.values():
+        fat = _q(r["faturamento"])
+        pct = (fat / faturamento_total * 100).quantize(_CENTAVOS) if faturamento_total > 0 else Decimal("0.00")
+        linhas.append(
+            {
+                "categoria_id": r["categoria_id"],
+                "categoria_nome": r["categoria_nome"],
+                "quantidade": r["quantidade"],
+                "faturamento": fat,
+                "lucro": _q(r["lucro"]),
+                "percentual": pct,
+            }
+        )
+
+    linhas.sort(key=lambda x: x["faturamento"], reverse=True)
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "faturamento_total": _q(faturamento_total),
+        "linhas": linhas,
+    }
+
+
+def perdas_e_ajustes(db: Session, dias: int) -> dict:
+    """Movimentações de perda, quebra, inventário e ajustes (fora de venda/compra)."""
+    inicio = _inicio_periodo(dias)
+    movs = (
+        db.query(MovimentacaoEstoque)
+        .filter(MovimentacaoEstoque.criado_em >= inicio)
+        .filter(
+            (MovimentacaoEstoque.tipo == "ajuste")
+            | (
+                MovimentacaoEstoque.motivo.isnot(None)
+                & ~MovimentacaoEstoque.motivo.in_(
+                    ["venda", "compra", "estorno", "devolucao"]
+                )
+            )
+        )
+        .order_by(MovimentacaoEstoque.criado_em.desc(), MovimentacaoEstoque.id.desc())
+        .all()
+    )
+
+    # Custo atual dos produtos ainda existentes (para valorizar perdas de saída).
+    custo_produto = {
+        pid: (custo or Decimal("0"))
+        for pid, custo in db.query(Produto.id, Produto.preco_custo)
+    }
+
+    linhas = []
+    valor_perdas = Decimal("0")
+    for m in movs:
+        valor = None
+        if m.tipo == "saida":
+            unit = m.custo_unitario
+            if unit is None:
+                unit = custo_produto.get(m.produto_id, Decimal("0"))
+            valor = _q(Decimal(unit) * m.quantidade)
+            valor_perdas += valor
+        linhas.append(
+            {
+                "id": m.id,
+                "criado_em": m.criado_em,
+                "produto_nome": m.produto_nome,
+                "tipo": m.tipo,
+                "quantidade": m.quantidade,
+                "estoque_resultante": m.estoque_resultante,
+                "motivo": m.motivo,
+                "valor_estimado": valor,
+            }
+        )
+
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "num_movimentacoes": len(linhas),
+        "valor_perdas_estimado": _q(valor_perdas),
+        "linhas": linhas,
+    }
+
+
+def giro_e_cobertura(db: Session, dias: int) -> dict:
+    """Giro e cobertura (dias de estoque) por produto ativo no período."""
+    inicio = _inicio_periodo(dias)
+
+    # Quantidade vendida por produto no período.
+    vendido = dict(
+        db.query(ItemVenda.produto_id, func.sum(ItemVenda.quantidade))
+        .join(Venda, ItemVenda.venda_id == Venda.id)
+        .filter(
+            Venda.criado_em >= inicio,
+            Venda.cancelada_em.is_(None),
+            ItemVenda.produto_id.isnot(None),
+            ItemVenda.quantidade > 0,
+        )
+        .group_by(ItemVenda.produto_id)
+        .all()
+    )
+
+    produtos = db.query(Produto).filter(Produto.ativo.is_(True)).all()
+    dias_periodo = max(1, dias)
+
+    linhas = []
+    for p in produtos:
+        qtd_vendida = int(vendido.get(p.id, 0) or 0)
+        estoque_qtd = p.estoque or 0
+        venda_media = Decimal(qtd_vendida) / Decimal(dias_periodo)
+        venda_media = venda_media.quantize(Decimal("0.01"))
+        if venda_media > 0:
+            cobertura = int((Decimal(estoque_qtd) / venda_media).to_integral_value())
+        else:
+            cobertura = None  # sem vendas: cobertura "infinita"
+        linhas.append(
+            {
+                "produto_id": p.id,
+                "produto_nome": p.nome,
+                "estoque": estoque_qtd,
+                "qtd_vendida": qtd_vendida,
+                "venda_media_diaria": venda_media,
+                "cobertura_dias": cobertura,
+            }
+        )
+
+    # Ordena: quem tem cobertura (vai acabar) primeiro, menor cobertura no topo;
+    # produtos sem venda vão para o fim.
+    linhas.sort(key=lambda x: (x["cobertura_dias"] is None, x["cobertura_dias"] or 0))
+    return {
+        "dias": dias,
+        "inicio": inicio.date(),
+        "qtd_produtos": len(linhas),
+        "linhas": linhas,
+    }
+
+
+def clientes_inativos(db: Session, dias: int) -> dict:
+    """Clientes ativos sem comprar há mais de `dias` (inclui quem nunca comprou)."""
+    # Estatísticas de compra por cliente (todo o histórico).
+    stats = {
+        cid: {"ultima": ultima, "num": num, "total": total or Decimal("0")}
+        for cid, ultima, num, total in db.query(
+            Venda.cliente_id,
+            func.max(Venda.criado_em),
+            func.count(Venda.id),
+            func.sum(Venda.total_liquido),
+        )
+        .filter(Venda.cliente_id.isnot(None), Venda.cancelada_em.is_(None))
+        .group_by(Venda.cliente_id)
+    }
+
+    clientes = db.query(Cliente).filter(Cliente.ativo.is_(True)).all()
+    hoje = date.today()
+    limite = hoje - timedelta(days=dias)
+
+    linhas = []
+    for c in clientes:
+        s = stats.get(c.id)
+        ultima = s["ultima"].date() if s and s["ultima"] else None
+        # Inativo: nunca comprou, ou última compra antes do limite.
+        if ultima is not None and ultima >= limite:
+            continue
+        dias_sem = (hoje - ultima).days if ultima else None
+        linhas.append(
+            {
+                "cliente_id": c.id,
+                "cliente_nome": c.nome,
+                "telefone": c.telefone,
+                "ultima_compra": ultima,
+                "dias_sem_comprar": dias_sem,
+                "num_compras": s["num"] if s else 0,
+                "faturamento_total": _q(s["total"]) if s else Decimal("0.00"),
+            }
+        )
+
+    # Nunca comprou (None) por último; entre os demais, mais tempo parado primeiro.
+    linhas.sort(key=lambda x: (x["dias_sem_comprar"] is None, -(x["dias_sem_comprar"] or 0)))
+    return {
+        "dias": dias,
+        "qtd_clientes": len(linhas),
+        "linhas": linhas,
     }

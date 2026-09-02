@@ -4,7 +4,12 @@ from sqlalchemy.orm import Session
 
 from app.crud import cliente as crud_cliente
 from app.database import get_db
-from app.schemas.cliente import ClienteCreate, ClienteOut, ClienteUpdate
+from app.schemas.cliente import (
+    ClienteCreate,
+    ClienteOut,
+    ClienteUpdate,
+    FichaCliente,
+)
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
 
@@ -25,6 +30,14 @@ def obter_cliente(cliente_id: int, db: Session = Depends(get_db)):
     if cliente is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente não encontrado.")
     return cliente
+
+
+@router.get("/{cliente_id}/ficha", response_model=FichaCliente)
+def ficha_cliente(cliente_id: int, db: Session = Depends(get_db)):
+    ficha = crud_cliente.ficha(db, cliente_id)
+    if ficha is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente não encontrado.")
+    return ficha
 
 
 @router.post("", response_model=ClienteOut, status_code=status.HTTP_201_CREATED)

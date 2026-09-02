@@ -54,6 +54,56 @@ class VendaCreate(BaseModel):
     itens: list[ItemVendaCreate] = Field(..., min_length=1)
 
 
+class EstornoRequest(BaseModel):
+    """Corpo opcional do estorno, com o motivo do cancelamento."""
+
+    motivo: str | None = Field(default=None, max_length=200)
+
+
+class MotivoDevolucao(str, Enum):
+    defeito = "defeito"
+    nao_gostou = "nao_gostou"
+    tamanho_errado = "tamanho_errado"
+    produto_errado = "produto_errado"
+    arrependimento = "arrependimento"
+    outro = "outro"
+
+
+class ItemDevolucaoRequest(BaseModel):
+    item_venda_id: int
+    quantidade: int = Field(..., gt=0)
+
+
+class DevolucaoRequest(BaseModel):
+    motivo: MotivoDevolucao
+    observacao: str | None = Field(default=None, max_length=300)
+    itens: list[ItemDevolucaoRequest] = Field(..., min_length=1)
+
+
+class ItemDevolucaoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    produto_id: int | None
+    produto_nome: str
+    quantidade: int
+    preco_unitario: Decimal
+    custo_unitario: Decimal
+    subtotal: Decimal
+
+
+class DevolucaoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    venda_id: int
+    motivo: str
+    observacao: str | None
+    valor_devolvido: Decimal
+    criado_em: datetime
+    itens: list[ItemDevolucaoOut] = Field(default_factory=list)
+
+
 class VendaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -68,7 +118,10 @@ class VendaOut(BaseModel):
     lucro: Decimal
     observacao: str | None
     criado_em: datetime
+    cancelada_em: datetime | None = None
+    motivo_cancelamento: str | None = None
     itens: list[ItemVendaOut] = Field(default_factory=list)
+    devolucoes: list["DevolucaoOut"] = Field(default_factory=list)
 
     @computed_field
     @property

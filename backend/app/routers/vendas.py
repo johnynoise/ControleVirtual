@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 from app.crud import venda as crud_venda
 from app.crud.venda import ErroVenda
 from app.database import get_db
-from app.schemas.venda import VendaCreate, VendaOut
+from app.schemas.venda import (
+    DevolucaoRequest,
+    EstornoRequest,
+    VendaCreate,
+    VendaOut,
+)
 
 router = APIRouter(prefix="/vendas", tags=["Vendas"])
 
@@ -34,3 +39,35 @@ def criar_venda(dados: VendaCreate, db: Session = Depends(get_db)):
         return crud_venda.criar(db, dados)
     except ErroVenda as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.post("/{venda_id}/estornar", response_model=VendaOut)
+def estornar_venda(
+    venda_id: int,
+    dados: EstornoRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    """Estorna uma venda: devolve o estoque e a marca como cancelada."""
+    try:
+        venda = crud_venda.estornar(db, venda_id, dados.motivo if dados else None)
+    except ErroVenda as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if venda is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Venda não encontrada.")
+    return venda
+
+
+@router.post("/{venda_id}/devolver", response_model=VendaOut)
+def devolver_venda(
+    venda_id: int,
+    dados: DevolucaoRequest,
+    db: Session = Depends(get_db),
+):
+    """Devolve itens de uma venda (parcial ou total), ajustando estoque e totais."""
+    try:
+        venda = crud_venda.devolver(db, venda_id, dados)
+    except ErroVenda as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if venda is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Venda não encontrada.")
+    return venda

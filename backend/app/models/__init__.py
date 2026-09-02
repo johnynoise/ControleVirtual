@@ -5,6 +5,7 @@ Importa todos os models aqui para que o metadata do SQLAlchemy os conheça
 """
 from app.models.categoria import Categoria
 from app.models.cliente import Cliente
+from app.models.devolucao import Devolucao, ItemDevolucao
 from app.models.fornecedor import Fornecedor
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import Produto, VariacaoProduto
@@ -19,4 +20,6 @@ __all__ = [
     "Cliente",
     "Venda",
     "ItemVenda",
+    "Devolucao",
+    "ItemDevolucao",
 ]

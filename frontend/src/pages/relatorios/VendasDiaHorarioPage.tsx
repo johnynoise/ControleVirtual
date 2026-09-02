@@ -1,0 +1,115 @@
+import { useEffect, useMemo, useState } from "react";
+import type { RelatorioVendasDiaHorario } from "../../types";
+import { obterVendasDiaHorario } from "../../services/relatorios";
+import { brl, extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
+
+const icone = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="17" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M8 2v4" />
+    <path d="M16 2v4" />
+  </svg>
+);
+
+export default function VendasDiaHorarioPage() {
+  const [dias, setDias] = useState(30);
+  const [dados, setDados] = useState<RelatorioVendasDiaHorario | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    obterVendasDiaHorario(dias)
+      .then((d) => ativo && setDados(d))
+      .catch((e) => ativo && setErro(extrairErro(e)))
+      .finally(() => ativo && setCarregando(false));
+    return () => {
+      ativo = false;
+    };
+  }, [dias]);
+
+  const porDia = dados?.por_dia_semana ?? [];
+  const porHora = dados?.por_hora ?? [];
+
+  const maxDia = useMemo(
+    () => Math.max(1, ...porDia.map((d) => parseFloat(d.faturamento) || 0)),
+    [porDia]
+  );
+  const maxHora = useMemo(
+    () => Math.max(1, ...porHora.map((h) => parseFloat(h.faturamento) || 0)),
+    [porHora]
+  );
+
+  return (
+    <div className="page">
+      <RelatorioHeader
+        titulo="Vendas por dia e horário"
+        icone={icone}
+        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+      />
+
+      {erro && <div className="alert erro">{erro}</div>}
+
+      <div className="kpis">
+        <div className="kpi">
+          <span className="kpi-label">Melhor dia</span>
+          <span className="kpi-valor">{dados?.melhor_dia ?? "—"}</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-label">Melhor horário</span>
+          <span className="kpi-valor">
+            {dados?.melhor_hora != null ? `${String(dados.melhor_hora).padStart(2, "0")}h` : "—"}
+          </span>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Faturamento por dia da semana</h2>
+        {carregando ? (
+          <p className="vazio">Carregando...</p>
+        ) : (
+          <div className="grafico-barras">
+            {porDia.map((d) => {
+              const valor = parseFloat(d.faturamento) || 0;
+              const altura = Math.round((valor / maxDia) * 100);
+              return (
+                <div className="barra-col" key={d.indice} title={`${d.rotulo}: ${brl(valor)}`}>
+                  <div className="barra-valor">{valor > 0 ? brl(valor) : ""}</div>
+                  <div className="barra" style={{ height: `${altura}%` }} />
+                  <div className="barra-label">{d.rotulo.slice(0, 3)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Faturamento por hora do dia</h2>
+        {carregando ? (
+          <p className="vazio">Carregando...</p>
+        ) : (
+          <div className="grafico-barras">
+            {porHora.map((h) => {
+              const valor = parseFloat(h.faturamento) || 0;
+              const altura = Math.round((valor / maxHora) * 100);
+              return (
+                <div
+                  className="barra-col"
+                  key={h.hora}
+                  title={`${String(h.hora).padStart(2, "0")}h: ${brl(valor)} (${h.num_vendas} vendas)`}
+                >
+                  <div className="barra" style={{ height: `${altura}%` }} />
+                  <div className="barra-label">{String(h.hora).padStart(2, "0")}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

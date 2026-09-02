@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Fornecedor, FornecedorCreate } from "../types";
 import {
   atualizarFornecedor,
@@ -6,16 +6,7 @@ import {
   listarFornecedores,
   removerFornecedor,
 } from "../services/fornecedores";
-
-function extrairErro(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
-    ?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail) && detail.length > 0) {
-    return detail.map((d: { msg?: string }) => d.msg ?? "").join("; ");
-  }
-  return "Não foi possível concluir a operação.";
-}
+import { corAvatar, extrairErro, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
 
 function formVazio(): FornecedorCreate {
   return {
@@ -33,14 +24,20 @@ function formVazio(): FornecedorCreate {
   };
 }
 
+type FiltroStatus = "todos" | "ativos" | "inativos";
+
 export default function FornecedoresPage() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
+  const [modalAberto, setModalAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<FornecedorCreate>(formVazio());
   const [salvando, setSalvando] = useState(false);
+
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState<FiltroStatus>("todos");
 
   async function carregar() {
     setCarregando(true);
@@ -58,12 +55,34 @@ export default function FornecedoresPage() {
     carregar();
   }, []);
 
-  function limpar() {
+  const fornecedoresFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    return fornecedores.filter((f) => {
+      if (filtro === "ativos" && !f.ativo) return false;
+      if (filtro === "inativos" && f.ativo) return false;
+      if (!termo) return true;
+      return [
+        f.nome,
+        f.nome_fantasia,
+        f.documento,
+        f.email,
+        f.telefone,
+        f.contato,
+        f.cidade,
+      ]
+        .filter(Boolean)
+        .some((campo) => (campo as string).toLowerCase().includes(termo));
+    });
+  }, [fornecedores, busca, filtro]);
+
+  function abrirNovo() {
     setEditandoId(null);
     setForm(formVazio());
+    setErro(null);
+    setModalAberto(true);
   }
 
-  function editar(f: Fornecedor) {
+  function abrirEditar(f: Fornecedor) {
     setEditandoId(f.id);
     setForm({
       nome: f.nome,
@@ -78,7 +97,14 @@ export default function FornecedoresPage() {
       observacao: f.observacao ?? "",
       ativo: f.ativo,
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setErro(null);
+    setModalAberto(true);
+  }
+
+  function fecharModal() {
+    setModalAberto(false);
+    setEditandoId(null);
+    setForm(formVazio());
   }
 
   function setCampo<K extends keyof FornecedorCreate>(chave: K, valor: FornecedorCreate[K]) {
@@ -90,7 +116,6 @@ export default function FornecedoresPage() {
     setSalvando(true);
     setErro(null);
 
-    // Normaliza strings vazias para null.
     const payload: FornecedorCreate = {
       ...form,
       nome: form.nome.trim(),
@@ -111,7 +136,7 @@ export default function FornecedoresPage() {
       } else {
         await atualizarFornecedor(editandoId, payload);
       }
-      limpar();
+      fecharModal();
       await carregar();
     } catch (err) {
       setErro(extrairErro(err));
@@ -125,204 +150,224 @@ export default function FornecedoresPage() {
     setErro(null);
     try {
       await removerFornecedor(f.id);
-      if (editandoId === f.id) limpar();
       await carregar();
     } catch (err) {
       setErro(extrairErro(err));
     }
   }
 
+  const filtros: { valor: FiltroStatus; rotulo: string }[] = [
+    { valor: "todos", rotulo: "Todos" },
+    { valor: "ativos", rotulo: "Ativos" },
+    { valor: "inativos", rotulo: "Inativos" },
+  ];
+
   return (
     <div className="page">
-      <div className="page-title">
-        <span className="title-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9l1.5-4.5A1.5 1.5 0 0 1 6 3.5h12a1.5 1.5 0 0 1 1.5 1L21 9" />
-            <path d="M3 9h18v3a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z" />
-            <path d="M4 12v8h16v-8" />
-          </svg>
-        </span>
-        <h1>Fornecedores</h1>
+      <div className="page-header">
+        <div className="page-title">
+          <span className="title-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l1.5-4.5A1.5 1.5 0 0 1 6 3.5h12a1.5 1.5 0 0 1 1.5 1L21 9" />
+              <path d="M3 9h18v3a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z" />
+              <path d="M4 12v8h16v-8" />
+            </svg>
+          </span>
+          <h1>Fornecedores</h1>
+        </div>
+        <button className="btn primario" onClick={abrirNovo}>
+          + Novo fornecedor
+        </button>
       </div>
-      <p className="subtitle">
-        Quem fornece seus produtos. Você pode vinculá-los às entradas de compra no estoque.
-      </p>
 
-      {erro && <div className="alert erro">{erro}</div>}
+      {erro && !modalAberto && <div className="alert erro">{erro}</div>}
 
-      <form className="card form" onSubmit={salvar}>
-        <h2>{editandoId === null ? "Novo fornecedor" : "Editar fornecedor"}</h2>
-
-        <div className="grid-2">
-          <label>
-            Nome / Razão social
-            <input
-              value={form.nome}
-              onChange={(e) => setCampo("nome", e.target.value)}
-              placeholder="Ex.: Distribuidora ABC Ltda"
-              required
-            />
-          </label>
-          <label>
-            Nome fantasia
-            <input
-              value={form.nome_fantasia ?? ""}
-              onChange={(e) => setCampo("nome_fantasia", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-        </div>
-
-        <div className="grid-4">
-          <label>
-            CNPJ / CPF
-            <input
-              value={form.documento ?? ""}
-              onChange={(e) => setCampo("documento", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            Telefone
-            <input
-              value={form.telefone ?? ""}
-              onChange={(e) => setCampo("telefone", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            E-mail
-            <input
-              type="email"
-              value={form.email ?? ""}
-              onChange={(e) => setCampo("email", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            Contato
-            <input
-              value={form.contato ?? ""}
-              onChange={(e) => setCampo("contato", e.target.value)}
-              placeholder="Nome do responsável"
-            />
-          </label>
-        </div>
-
-        <div className="grid-4">
-          <label style={{ gridColumn: "span 2" }}>
-            Endereço
-            <input
-              value={form.endereco ?? ""}
-              onChange={(e) => setCampo("endereco", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            Cidade
-            <input
-              value={form.cidade ?? ""}
-              onChange={(e) => setCampo("cidade", e.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            UF
-            <input
-              value={form.estado ?? ""}
-              onChange={(e) => setCampo("estado", e.target.value)}
-              maxLength={2}
-              placeholder="SP"
-            />
-          </label>
-        </div>
-
-        <label>
-          Observação
+      <div className="toolbar">
+        <div className="busca">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4-4" />
+          </svg>
           <input
-            value={form.observacao ?? ""}
-            onChange={(e) => setCampo("observacao", e.target.value)}
-            placeholder="Opcional"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por nome, documento, cidade, contato..."
           />
-        </label>
-
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={form.ativo}
-            onChange={(e) => setCampo("ativo", e.target.checked)}
-          />
-          Fornecedor ativo
-        </label>
-
-        <div className="form-acoes">
-          <button className="btn primario" type="submit" disabled={salvando}>
-            {salvando ? "Salvando..." : editandoId === null ? "Criar fornecedor" : "Salvar"}
-          </button>
-          {editandoId !== null && (
-            <button type="button" className="btn secundario" onClick={limpar}>
-              Cancelar
+        </div>
+        <div className="periodo-tabs">
+          {filtros.map((f) => (
+            <button
+              key={f.valor}
+              className={`btn ${filtro === f.valor ? "primario" : "secundario"} pequeno`}
+              onClick={() => setFiltro(f.valor)}
+            >
+              {f.rotulo}
             </button>
-          )}
+          ))}
         </div>
-      </form>
+        <span className="contagem">
+          {fornecedoresFiltrados.length}{" "}
+          {fornecedoresFiltrados.length === 1 ? "fornecedor" : "fornecedores"}
+        </span>
+      </div>
 
       <div className="card">
-        <h2>Fornecedores cadastrados</h2>
         {carregando ? (
           <p className="vazio">Carregando...</p>
         ) : fornecedores.length === 0 ? (
-          <p className="vazio">Nenhum fornecedor ainda.</p>
+          <p className="vazio">
+            Nenhum fornecedor cadastrado. Clique em "+ Novo fornecedor" para começar.
+          </p>
+        ) : fornecedoresFiltrados.length === 0 ? (
+          <p className="vazio">Nenhum fornecedor encontrado para esse filtro.</p>
         ) : (
           <table className="tabela">
             <thead>
               <tr>
-                <th>Nome</th>
+                <th>Fornecedor</th>
                 <th>Documento</th>
                 <th>Contato</th>
                 <th>Cidade/UF</th>
+                <th>Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {fornecedores.map((f) => (
-                <tr key={f.id} className={f.ativo ? "" : "inativo"}>
-                  <td>
-                    <strong>{f.nome}</strong>
-                    {f.nome_fantasia && <div className="muted">{f.nome_fantasia}</div>}
-                  </td>
-                  <td>{f.documento ?? <span className="muted">—</span>}</td>
-                  <td>
-                    {f.telefone || f.email ? (
-                      <>
-                        {f.telefone && <div>{f.telefone}</div>}
-                        {f.email && <div className="muted">{f.email}</div>}
-                      </>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td>
-                    {f.cidade || f.estado ? (
-                      `${f.cidade ?? ""}${f.cidade && f.estado ? " / " : ""}${f.estado ?? ""}`
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td className="acoes">
-                    <button className="btn secundario pequeno" onClick={() => editar(f)}>
-                      Editar
-                    </button>
-                    <button className="btn perigo pequeno" onClick={() => excluir(f)}>
-                      Excluir
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {fornecedoresFiltrados.map((f) => {
+                const wpp = linkWhatsapp(f.telefone);
+                return (
+                  <tr key={f.id} className={f.ativo ? "" : "inativo"}>
+                    <td>
+                      <div className="cliente-cell">
+                        <span className="avatar" style={{ background: corAvatar(f.nome) }}>
+                          {iniciais(f.nome_fantasia || f.nome)}
+                        </span>
+                        <div className="contato-linha">
+                          <strong>{f.nome}</strong>
+                          {f.nome_fantasia && (
+                            <span className="muted">{f.nome_fantasia}</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td>{f.documento ?? <span className="muted">—</span>}</td>
+                    <td>
+                      {f.telefone || f.email ? (
+                        <div className="contato-linha">
+                          {f.telefone && <span>{f.telefone}</span>}
+                          {f.email && <span className="muted">{f.email}</span>}
+                        </div>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {f.cidade || f.estado ? (
+                        `${f.cidade ?? ""}${f.cidade && f.estado ? " / " : ""}${f.estado ?? ""}`
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`chip ${f.ativo ? "status-ativo" : "status-inativo"}`}>
+                        {f.ativo ? "Ativo" : "Inativo"}
+                      </span>
+                    </td>
+                    <td className="acoes">
+                      {wpp && (
+                        <a
+                          className="icone-acao"
+                          href={wpp}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Chamar no WhatsApp"
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d={WHATSAPP_PATH} />
+                          </svg>
+                        </a>
+                      )}
+                      <button className="btn secundario pequeno" onClick={() => abrirEditar(f)}>
+                        Editar
+                      </button>
+                      <button className="btn perigo pequeno" onClick={() => excluir(f)}>
+                        Excluir
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {modalAberto && (
+        <div className="recibo-overlay" onClick={fecharModal}>
+          <form
+            className="modal-box form"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={salvar}
+          >
+            <h2>{editandoId === null ? "Novo fornecedor" : "Editar fornecedor"}</h2>
+
+            {erro && <div className="alert erro">{erro}</div>}
+
+            <label style={{ marginBottom: "1rem" }}>
+              Nome / Razão social
+              <input
+                value={form.nome}
+                onChange={(e) => setCampo("nome", e.target.value)}
+                placeholder="Ex.: Distribuidora ABC Ltda"
+                required
+                autoFocus
+              />
+            </label>
+
+            <div className="grid-2">
+              <label>
+                Telefone
+                <input
+                  value={form.telefone ?? ""}
+                  onChange={(e) => setCampo("telefone", e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+              <label>
+                E-mail
+                <input
+                  type="email"
+                  value={form.email ?? ""}
+                  onChange={(e) => setCampo("email", e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+            </div>
+
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.ativo}
+                onChange={(e) => setCampo("ativo", e.target.checked)}
+              />
+              Fornecedor ativo
+            </label>
+
+            <div className="form-acoes">
+              <button className="btn primario" type="submit" disabled={salvando}>
+                {salvando
+                  ? "Salvando..."
+                  : editandoId === null
+                    ? "Criar fornecedor"
+                    : "Salvar"}
+              </button>
+              <button type="button" className="btn secundario" onClick={fecharModal}>
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

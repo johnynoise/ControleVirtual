@@ -1,5 +1,6 @@
 """Schemas Pydantic de Cliente."""
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,3 +29,35 @@ class ClienteOut(ClienteBase):
     id: int
     criado_em: datetime
     atualizado_em: datetime
+
+
+# --------------------------------------------------------------------------- #
+# Ficha do cliente
+# --------------------------------------------------------------------------- #
+class ProdutoFavorito(BaseModel):
+    produto_id: int | None
+    produto_nome: str
+    quantidade: int
+    total: Decimal
+
+
+class CompraResumo(BaseModel):
+    id: int
+    criado_em: datetime
+    forma_pagamento: str | None
+    total_liquido: Decimal
+    num_itens: int
+    estornada: bool
+    tem_devolucao: bool
+
+
+class FichaCliente(BaseModel):
+    cliente: ClienteOut
+    num_compras: int
+    total_gasto: Decimal
+    ticket_medio: Decimal
+    total_itens: int
+    primeira_compra: datetime | None
+    ultima_compra: datetime | None
+    favoritos: list[ProdutoFavorito]
+    compras: list[CompraResumo]

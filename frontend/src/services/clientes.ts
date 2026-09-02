@@ -1,5 +1,5 @@
 import { api } from "./api";
-import type { Cliente, ClienteCreate } from "../types";
+import type { Cliente, ClienteCreate, FichaCliente } from "../types";
 
 export async function listarClientes(params?: {
   apenas_ativos?: boolean;
@@ -23,4 +23,9 @@ export async function atualizarCliente(
 
 export async function removerCliente(id: number): Promise<void> {
   await api.delete(`/clientes/${id}`);
+}
+
+export async function obterFichaCliente(id: number): Promise<FichaCliente> {
+  const { data } = await api.get<FichaCliente>(`/clientes/${id}/ficha`);
+  return data;
 }

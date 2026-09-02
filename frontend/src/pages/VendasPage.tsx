@@ -3,13 +3,14 @@ import type {
   Cliente,
   FormaPagamento,
   ItemVendaCreate,
+  MotivoDevolucao,
   Produto,
   Venda,
   VendaCreate,
 } from "../types";
 import { listarProdutos } from "../services/produtos";
 import { criarCliente, listarClientes } from "../services/clientes";
-import { criarVenda, listarVendas } from "../services/vendas";
+import { criarVenda, devolverVenda, listarVendas } from "../services/vendas";
 import Recibo from "../components/Recibo";
 
 const PAGAMENTOS: { valor: FormaPagamento; rotulo: string }[] = [
@@ -17,6 +18,15 @@ const PAGAMENTOS: { valor: FormaPagamento; rotulo: string }[] = [
   { valor: "pix", rotulo: "PIX" },
   { valor: "cartao_credito", rotulo: "Cartão crédito" },
   { valor: "cartao_debito", rotulo: "Cartão débito" },
+  { valor: "outro", rotulo: "Outro" },
+];
+
+const MOTIVOS_DEVOLUCAO: { valor: MotivoDevolucao; rotulo: string }[] = [
+  { valor: "defeito", rotulo: "Defeito" },
+  { valor: "nao_gostou", rotulo: "Cliente não gostou" },
+  { valor: "tamanho_errado", rotulo: "Tamanho/modelo errado" },
+  { valor: "produto_errado", rotulo: "Produto errado" },
+  { valor: "arrependimento", rotulo: "Desistência/arrependimento" },
   { valor: "outro", rotulo: "Outro" },
 ];
 
@@ -74,6 +84,14 @@ export default function VendasPage() {
 
   // Venda exibida no recibo (após finalizar ou ao reimprimir do histórico).
   const [vendaRecibo, setVendaRecibo] = useState<Venda | null>(null);
+
+  // Devolução: venda selecionada, quantidades por item, motivo e observação.
+  const [vendaDevolucao, setVendaDevolucao] = useState<Venda | null>(null);
+  const [devQtd, setDevQtd] = useState<Record<number, string>>({});
+  const [devMotivo, setDevMotivo] = useState<MotivoDevolucao>("defeito");
+  const [devObs, setDevObs] = useState("");
+  const [devErro, setDevErro] = useState<string | null>(null);
+  const [salvandoDev, setSalvandoDev] = useState(false);
 
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) ?? null;
 
@@ -197,6 +215,72 @@ export default function VendasPage() {
     setProdutoId("");
     setQuantidade("1");
     setPreco("");
+  }
+
+  function abrirDevolucao(v: Venda) {
+    setVendaDevolucao(v);
+    setDevQtd({});
+    setDevMotivo("defeito");
+    setDevObs("");
+    setDevErro(null);
+  }
+
+  function fecharDevolucao() {
+    setVendaDevolucao(null);
+  }
+
+  // Itens ainda passíveis de devolução (quantidade restante > 0).
+  const itensDevolviveis = useMemo(
+    () => (vendaDevolucao?.itens ?? []).filter((i) => i.quantidade > 0),
+    [vendaDevolucao]
+  );
+
+  // Prévia do valor total a devolver conforme as quantidades escolhidas.
+  const totalDevolucao = useMemo(
+    () =>
+      itensDevolviveis.reduce((acc, i) => {
+        const q = parseInt(devQtd[i.id] ?? "", 10) || 0;
+        return acc + q * (parseFloat(i.preco_unitario) || 0);
+      }, 0),
+    [itensDevolviveis, devQtd]
+  );
+
+  function preencherTudo() {
+    const tudo: Record<number, string> = {};
+    itensDevolviveis.forEach((i) => {
+      tudo[i.id] = String(i.quantidade);
+    });
+    setDevQtd(tudo);
+  }
+
+  async function confirmarDevolucao() {
+    if (!vendaDevolucao) return;
+    const itens = itensDevolviveis
+      .map((i) => ({
+        item_venda_id: i.id,
+        quantidade: parseInt(devQtd[i.id] ?? "", 10) || 0,
+      }))
+      .filter((i) => i.quantidade > 0);
+
+    if (itens.length === 0) {
+      setDevErro("Informe a quantidade de pelo menos um item.");
+      return;
+    }
+    setSalvandoDev(true);
+    setDevErro(null);
+    try {
+      await devolverVenda(vendaDevolucao.id, {
+        motivo: devMotivo,
+        observacao: devObs.trim() || null,
+        itens,
+      });
+      fecharDevolucao();
+      await carregar();
+    } catch (err) {
+      setDevErro(extrairErro(err));
+    } finally {
+      setSalvandoDev(false);
+    }
   }
 
   async function finalizar() {
@@ -491,34 +575,66 @@ export default function VendasPage() {
               </tr>
             </thead>
             <tbody>
-              {vendas.map((v) => (
-                <tr key={v.id}>
-                  <td className="muted">{formatarData(v.criado_em)}</td>
-                  <td>{v.cliente_nome ?? <span className="muted">—</span>}</td>
-                  <td className="muted">
-                    {v.itens.reduce((acc, i) => acc + i.quantidade, 0)} un
-                    {" · "}
-                    {v.itens.length} {v.itens.length === 1 ? "item" : "itens"}
-                  </td>
-                  <td className="muted">{v.forma_pagamento ?? "—"}</td>
-                  <td>
-                    <strong>{brl(v.total_liquido)}</strong>
-                    {parseFloat(v.desconto) > 0 && (
-                      <div className="muted">desc. {brl(v.desconto)}</div>
-                    )}
-                  </td>
-                  <td>{brl(v.lucro)}</td>
-                  <td>{v.margem_percentual}%</td>
-                  <td className="acoes">
-                    <button
-                      className="btn secundario pequeno"
-                      onClick={() => setVendaRecibo(v)}
-                    >
-                      Recibo
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {vendas.map((v) => {
+                const estornada = Boolean(v.cancelada_em);
+                const temDevolucao = (v.devolucoes?.length ?? 0) > 0;
+                return (
+                  <tr key={v.id} className={estornada ? "inativo" : undefined}>
+                    <td className="muted">{formatarData(v.criado_em)}</td>
+                    <td>
+                      {v.cliente_nome ?? <span className="muted">—</span>}
+                      {estornada ? (
+                        <span
+                          className="chip mov-saida"
+                          title={v.motivo_cancelamento ?? undefined}
+                          style={{ marginLeft: "0.4rem" }}
+                        >
+                          Estornada
+                        </span>
+                      ) : (
+                        temDevolucao && (
+                          <span
+                            className="chip mov-ajuste"
+                            style={{ marginLeft: "0.4rem" }}
+                          >
+                            Devolução parcial
+                          </span>
+                        )
+                      )}
+                    </td>
+                    <td className="muted">
+                      {v.itens.reduce((acc, i) => acc + i.quantidade, 0)} un
+                      {" · "}
+                      {v.itens.length} {v.itens.length === 1 ? "item" : "itens"}
+                    </td>
+                    <td className="muted">{v.forma_pagamento ?? "—"}</td>
+                    <td>
+                      <strong>{brl(v.total_liquido)}</strong>
+                      {parseFloat(v.desconto) > 0 && (
+                        <div className="muted">desc. {brl(v.desconto)}</div>
+                      )}
+                    </td>
+                    <td>{brl(v.lucro)}</td>
+                    <td>{v.margem_percentual}%</td>
+                    <td className="acoes">
+                      <button
+                        className="btn secundario pequeno"
+                        onClick={() => setVendaRecibo(v)}
+                      >
+                        Recibo
+                      </button>
+                      {!estornada && (
+                        <button
+                          className="btn perigo pequeno"
+                          onClick={() => abrirDevolucao(v)}
+                        >
+                          Devolver
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -536,6 +652,110 @@ export default function VendasPage() {
               </button>
               <button className="btn secundario" onClick={() => setVendaRecibo(null)}>
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {vendaDevolucao && (
+        <div className="recibo-overlay" onClick={fecharDevolucao}>
+          <div className="modal-box form" onClick={(e) => e.stopPropagation()}>
+            <h2>Devolver itens · venda #{vendaDevolucao.id}</h2>
+            <p className="muted" style={{ marginBottom: "1rem" }}>
+              Informe quanto de cada item está voltando. O estoque é reposto e a
+              venda é recalculada. Devolver tudo estorna a venda.
+            </p>
+
+            {devErro && <div className="alert erro">{devErro}</div>}
+
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>Produto</th>
+                  <th className="num">Vendido</th>
+                  <th className="num">Preço un.</th>
+                  <th className="num">Devolver</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itensDevolviveis.map((i) => (
+                  <tr key={i.id}>
+                    <td>{i.produto_nome}</td>
+                    <td className="num">{i.quantidade}</td>
+                    <td className="num">{brl(i.preco_unitario)}</td>
+                    <td className="num">
+                      <input
+                        type="number"
+                        min="0"
+                        max={i.quantidade}
+                        value={devQtd[i.id] ?? ""}
+                        placeholder="0"
+                        style={{ width: "5rem", textAlign: "right" }}
+                        onChange={(e) =>
+                          setDevQtd((atual) => ({ ...atual, [i.id]: e.target.value }))
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="form-acoes" style={{ marginTop: "0.75rem" }}>
+              <button
+                type="button"
+                className="btn secundario pequeno"
+                onClick={preencherTudo}
+              >
+                Devolver tudo
+              </button>
+            </div>
+
+            <div className="grid-2" style={{ marginTop: "1rem" }}>
+              <label>
+                Motivo
+                <select
+                  value={devMotivo}
+                  onChange={(e) => setDevMotivo(e.target.value as MotivoDevolucao)}
+                >
+                  {MOTIVOS_DEVOLUCAO.map((m) => (
+                    <option key={m.valor} value={m.valor}>
+                      {m.rotulo}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Observação (opcional)
+                <input
+                  value={devObs}
+                  onChange={(e) => setDevObs(e.target.value)}
+                  placeholder="Ex.: costura solta"
+                />
+              </label>
+            </div>
+
+            <div className="margem-preview" style={{ marginTop: "1rem" }}>
+              <span>
+                Total a devolver: <strong>{brl(totalDevolucao)}</strong>
+              </span>
+            </div>
+
+            <div className="form-acoes">
+              <button
+                className="btn perigo"
+                onClick={confirmarDevolucao}
+                disabled={salvandoDev || totalDevolucao <= 0}
+              >
+                {salvandoDev ? "Processando..." : "Confirmar devolução"}
+              </button>
+              <button
+                type="button"
+                className="btn secundario"
+                onClick={fecharDevolucao}
+              >
+                Cancelar
               </button>
             </div>
           </div>
