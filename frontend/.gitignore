@@ -10,6 +10,11 @@ dist-ssr/
 *.log
 npm-debug.log*
 
+# Banco SQLite (não deve existir aqui; o banco vive no backend)
+*.db
+*.sqlite
+*.sqlite3
+
 # Variáveis de ambiente
 .env
 .env.local

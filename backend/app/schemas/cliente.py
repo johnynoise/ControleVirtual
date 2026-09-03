@@ -49,6 +49,9 @@ class CompraResumo(BaseModel):
     num_itens: int
     estornada: bool
     tem_devolucao: bool
+    a_prazo: bool = False
+    total_pago: Decimal = Decimal("0")
+    saldo_devedor: Decimal = Decimal("0")
 
 
 class FichaCliente(BaseModel):
@@ -59,5 +62,6 @@ class FichaCliente(BaseModel):
     total_itens: int
     primeira_compra: datetime | None
     ultima_compra: datetime | None
+    saldo_devedor: Decimal = Decimal("0")
     favoritos: list[ProdutoFavorito]
     compras: list[CompraResumo]

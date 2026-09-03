@@ -1,10 +1,24 @@
 # ControleVirtual
 
-Sistema de controle de vendas para loja virtual, feito para rodar localmente.
+Sistema de controle de vendas e estoque para loja, feito para rodar localmente
+de forma simples e direta.
 
-**Stack:** FastAPI (backend) + React/Vite/TypeScript (frontend) + PostgreSQL (banco).
+**Stack:** FastAPI (backend) + React/Vite/TypeScript (frontend). Banco padrão
+**SQLite** (arquivo, sem servidor); PostgreSQL é opcional para produção.
 
-> Nota: esta é a estrutura base do projeto. As funcionalidades de negócio (produtos, vendas, estoque, clientes, relatórios) ainda não foram implementadas.
+## Funcionalidades
+
+- **PDV (vendas):** venda transacional que baixa o estoque, registra a
+  movimentação e calcula lucro numa única operação (com rollback em erro).
+- **Estorno e devolução:** cancelamento total ou devolução parcial de itens,
+  com retorno de estoque, recálculo de totais e histórico para auditoria.
+- **Produtos:** cadastro com variações e atributos por categoria, preço de
+  custo/venda, estoque e estoque mínimo.
+- **Estoque:** movimentações (kardex) de entrada/saída com motivo.
+- **Cadastros:** categorias, fornecedores e clientes (com ficha do cliente).
+- **Relatórios:** dashboard, curva ABC, giro e sem giro, ranking de clientes,
+  clientes inativos, forma de pagamento, compras por fornecedor, vendas por
+  dia/horário e por categoria, descontos e perdas.
 
 ## Estrutura do projeto
 
@@ -12,22 +26,23 @@ Sistema de controle de vendas para loja virtual, feito para rodar localmente.
 ControleVirtual/
 ├── backend/              # API FastAPI
 │   ├── app/
-│   │   ├── models/       # tabelas (SQLAlchemy) — vazio por enquanto
-│   │   ├── schemas/      # validação (Pydantic) — vazio por enquanto
-│   │   ├── routers/      # endpoints — vazio por enquanto
-│   │   ├── crud/         # operações no banco — vazio por enquanto
+│   │   ├── models/       # tabelas (SQLAlchemy)
+│   │   ├── schemas/      # validação (Pydantic)
+│   │   ├── routers/      # endpoints
+│   │   ├── crud/         # operações no banco e regras de negócio
 │   │   ├── config.py     # configurações via variáveis de ambiente
-│   │   ├── database.py   # conexão com o PostgreSQL
+│   │   ├── database.py   # conexão (SQLite/PostgreSQL)
 │   │   └── main.py       # ponto de entrada da API
+│   ├── seed_dados_fake.py # popula o banco com dados de exemplo
 │   ├── requirements.txt
 │   └── .env.example
 │
 └── frontend/             # React + Vite + TypeScript
     ├── src/
     │   ├── components/   # componentes reutilizáveis
-    │   ├── pages/        # telas
-    │   ├── services/     # api.ts (cliente axios)
-    │   ├── App.tsx
+    │   ├── pages/        # telas (inclui pages/relatorios/)
+    │   ├── services/     # cliente axios e chamadas por recurso
+    │   ├── App.tsx       # rotas (lazy-loading por página)
     │   └── main.tsx
     ├── package.json
     └── .env.example
@@ -37,7 +52,7 @@ ControleVirtual/
 
 - Python 3.11+ (testado com 3.13)
 - Node.js 18+ (testado com 24)
-- PostgreSQL (opcional por enquanto — a API sobe sem banco enquanto não há rotas que o utilizem)
+- PostgreSQL (opcional — o padrão é SQLite, que não exige servidor)
 
 ## Backend (FastAPI)
 
@@ -72,6 +87,17 @@ A API fica disponível em `http://localhost:8000`.
 - Rota de saúde: `http://localhost:8000/health`
 - Documentação automática (Swagger): `http://localhost:8000/docs`
 
+Na primeira execução, as tabelas são criadas automaticamente no arquivo
+`backend/controle_virtual.db`.
+
+### Dados de exemplo (opcional)
+
+Para popular o banco com dados fictícios e testar as telas rapidamente:
+
+```powershell
+.\venv\Scripts\python.exe seed_dados_fake.py
+```
+
 ## Frontend (React + Vite)
 
 Todos os comandos abaixo são executados a partir da pasta `frontend/`.
@@ -97,7 +123,8 @@ Todos os comandos abaixo são executados a partir da pasta `frontend/`.
    npm.cmd run dev
    ```
 
-O frontend fica disponível em `http://localhost:5173` e já consulta a rota `/health` da API para exibir o status da conexão.
+O frontend fica disponível em `http://localhost:5173` e já consulta a rota
+`/health` da API para exibir o status da conexão na barra lateral.
 
 ### Build de produção
 
@@ -107,12 +134,16 @@ npm.cmd run build
 
 Os arquivos finais são gerados na pasta `frontend/dist/`.
 
-## Banco de dados (PostgreSQL)
+## Banco de dados
 
-A conexão é configurada pela variável `DATABASE_URL` no arquivo `backend/.env`:
+Por padrão o projeto usa **SQLite** (arquivo `backend/controle_virtual.db`),
+sem necessidade de instalar nada. Para usar **PostgreSQL**, defina a variável
+`DATABASE_URL` no arquivo `backend/.env`:
 
 ```
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/controle_virtual
 ```
 
-Você pode rodar o PostgreSQL instalado direto na máquina ou via Docker. A configuração do banco e das migrations (Alembic) será feita quando as primeiras tabelas forem criadas.
+> Observação: a evolução do schema é feita de forma simples no startup
+> (`create_all` + uma mini-migração de colunas em `main.py`). O Alembic ainda
+> não é usado; quando o projeto crescer, é o próximo passo natural.

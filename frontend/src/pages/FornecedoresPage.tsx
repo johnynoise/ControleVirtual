@@ -7,6 +7,10 @@ import {
   removerFornecedor,
 } from "../services/fornecedores";
 import { corAvatar, extrairErro, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
+import Paginacao from "../components/Paginacao";
+import { useConfirm, useToast } from "../components/Feedback";
+
+const POR_PAGINA = 10;
 
 function formVazio(): FornecedorCreate {
   return {
@@ -27,6 +31,8 @@ function formVazio(): FornecedorCreate {
 type FiltroStatus = "todos" | "ativos" | "inativos";
 
 export default function FornecedoresPage() {
+  const toast = useToast();
+  const confirmar = useConfirm();
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -38,6 +44,7 @@ export default function FornecedoresPage() {
 
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<FiltroStatus>("todos");
+  const [pagina, setPagina] = useState(1);
 
   async function carregar() {
     setCarregando(true);
@@ -74,6 +81,21 @@ export default function FornecedoresPage() {
         .some((campo) => (campo as string).toLowerCase().includes(termo));
     });
   }, [fornecedores, busca, filtro]);
+
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(fornecedoresFiltrados.length / POR_PAGINA)
+  );
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const fornecedoresVisiveis = fornecedoresFiltrados.slice(
+    (paginaAtual - 1) * POR_PAGINA,
+    paginaAtual * POR_PAGINA
+  );
+
+  // Ao mudar filtro/busca, volta para a primeira página.
+  useEffect(() => {
+    setPagina(1);
+  }, [busca, filtro]);
 
   function abrirNovo() {
     setEditandoId(null);
@@ -131,6 +153,7 @@ export default function FornecedoresPage() {
     };
 
     try {
+      const edicao = editandoId !== null;
       if (editandoId === null) {
         await criarFornecedor(payload);
       } else {
@@ -138,6 +161,7 @@ export default function FornecedoresPage() {
       }
       fecharModal();
       await carregar();
+      toast.sucesso(edicao ? "Fornecedor salvo." : "Fornecedor criado.");
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -146,13 +170,22 @@ export default function FornecedoresPage() {
   }
 
   async function excluir(f: Fornecedor) {
-    if (!confirm(`Remover o fornecedor "${f.nome}"?`)) return;
+    const ok = await confirmar({
+      titulo: "Remover fornecedor",
+      mensagem: `Tem certeza que deseja remover "${f.nome}"?`,
+      confirmar: "Remover",
+      perigo: true,
+    });
+    if (!ok) return;
     setErro(null);
     try {
       await removerFornecedor(f.id);
       await carregar();
+      toast.sucesso("Fornecedor removido.");
     } catch (err) {
-      setErro(extrairErro(err));
+      const msg = extrairErro(err);
+      setErro(msg);
+      toast.erro(msg);
     }
   }
 
@@ -233,7 +266,7 @@ export default function FornecedoresPage() {
               </tr>
             </thead>
             <tbody>
-              {fornecedoresFiltrados.map((f) => {
+              {fornecedoresVisiveis.map((f) => {
                 const wpp = linkWhatsapp(f.telefone);
                 return (
                   <tr key={f.id} className={f.ativo ? "" : "inativo"}>
@@ -299,6 +332,14 @@ export default function FornecedoresPage() {
               })}
             </tbody>
           </table>
+        )}
+
+        {!carregando && fornecedoresFiltrados.length > 0 && (
+          <Paginacao
+            pagina={paginaAtual}
+            totalPaginas={totalPaginas}
+            onChange={setPagina}
+          />
         )}
       </div>
 

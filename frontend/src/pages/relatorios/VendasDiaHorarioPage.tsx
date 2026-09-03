@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RelatorioVendasDiaHorario } from "../../types";
 import { obterVendasDiaHorario } from "../../services/relatorios";
-import { brl, extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
+import { extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
+import GraficoBarras, { type BarraDado } from "../../components/GraficoBarras";
 
 const icone = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -34,12 +35,22 @@ export default function VendasDiaHorarioPage() {
   const porDia = dados?.por_dia_semana ?? [];
   const porHora = dados?.por_hora ?? [];
 
-  const maxDia = useMemo(
-    () => Math.max(1, ...porDia.map((d) => parseFloat(d.faturamento) || 0)),
+  const dadosDia = useMemo<BarraDado[]>(
+    () =>
+      porDia.map((d) => ({
+        rotulo: d.rotulo.slice(0, 3),
+        valor: parseFloat(d.faturamento) || 0,
+        detalhe: `${d.num_vendas} venda(s)`,
+      })),
     [porDia]
   );
-  const maxHora = useMemo(
-    () => Math.max(1, ...porHora.map((h) => parseFloat(h.faturamento) || 0)),
+  const dadosHora = useMemo<BarraDado[]>(
+    () =>
+      porHora.map((h) => ({
+        rotulo: `${String(h.hora).padStart(2, "0")}h`,
+        valor: parseFloat(h.faturamento) || 0,
+        detalhe: `${h.num_vendas} venda(s)`,
+      })),
     [porHora]
   );
 
@@ -71,19 +82,7 @@ export default function VendasDiaHorarioPage() {
         {carregando ? (
           <p className="vazio">Carregando...</p>
         ) : (
-          <div className="grafico-barras">
-            {porDia.map((d) => {
-              const valor = parseFloat(d.faturamento) || 0;
-              const altura = Math.round((valor / maxDia) * 100);
-              return (
-                <div className="barra-col" key={d.indice} title={`${d.rotulo}: ${brl(valor)}`}>
-                  <div className="barra-valor">{valor > 0 ? brl(valor) : ""}</div>
-                  <div className="barra" style={{ height: `${altura}%` }} />
-                  <div className="barra-label">{d.rotulo.slice(0, 3)}</div>
-                </div>
-              );
-            })}
-          </div>
+          <GraficoBarras dados={dadosDia} mostrarValorNoTopo />
         )}
       </div>
 
@@ -92,22 +91,7 @@ export default function VendasDiaHorarioPage() {
         {carregando ? (
           <p className="vazio">Carregando...</p>
         ) : (
-          <div className="grafico-barras">
-            {porHora.map((h) => {
-              const valor = parseFloat(h.faturamento) || 0;
-              const altura = Math.round((valor / maxHora) * 100);
-              return (
-                <div
-                  className="barra-col"
-                  key={h.hora}
-                  title={`${String(h.hora).padStart(2, "0")}h: ${brl(valor)} (${h.num_vendas} vendas)`}
-                >
-                  <div className="barra" style={{ height: `${altura}%` }} />
-                  <div className="barra-label">{String(h.hora).padStart(2, "0")}</div>
-                </div>
-              );
-            })}
-          </div>
+          <GraficoBarras dados={dadosHora} />
         )}
       </div>
     </div>

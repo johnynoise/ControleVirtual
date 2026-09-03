@@ -8,6 +8,10 @@ import {
   removerProduto,
 } from "../services/produtos";
 import { extrairErro } from "../lib/ui";
+import Paginacao from "../components/Paginacao";
+import { useConfirm, useToast } from "../components/Feedback";
+
+const POR_PAGINA = 10;
 
 interface FormState {
   nome: string;
@@ -40,6 +44,8 @@ function formVazio(): FormState {
 type FiltroStatus = "todos" | "ativos" | "inativos";
 
 export default function ProdutosPage() {
+  const toast = useToast();
+  const confirmar = useConfirm();
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -53,6 +59,7 @@ export default function ProdutosPage() {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
   const [filtroCategoria, setFiltroCategoria] = useState<number | "">("");
+  const [pagina, setPagina] = useState(1);
 
   const categoriaSelecionada = useMemo(
     () => categorias.find((c) => c.id === form.categoria_id) ?? null,
@@ -99,6 +106,21 @@ export default function ProdutosPage() {
         .some((campo) => (campo as string).toLowerCase().includes(termo));
     });
   }, [produtos, busca, filtroStatus, filtroCategoria]);
+
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(produtosFiltrados.length / POR_PAGINA)
+  );
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const produtosVisiveis = produtosFiltrados.slice(
+    (paginaAtual - 1) * POR_PAGINA,
+    paginaAtual * POR_PAGINA
+  );
+
+  // Ao mudar filtros/busca, volta para a primeira página.
+  useEffect(() => {
+    setPagina(1);
+  }, [busca, filtroStatus, filtroCategoria]);
 
   function abrirNovo() {
     setEditandoId(null);
@@ -175,6 +197,7 @@ export default function ProdutosPage() {
     };
 
     try {
+      const edicao = editandoId !== null;
       if (editandoId === null) {
         await criarProduto(payload);
       } else {
@@ -182,6 +205,7 @@ export default function ProdutosPage() {
       }
       fecharModal();
       await carregar();
+      toast.sucesso(edicao ? "Produto salvo." : "Produto criado.");
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -190,13 +214,22 @@ export default function ProdutosPage() {
   }
 
   async function excluir(p: Produto) {
-    if (!confirm(`Remover o produto "${p.nome}"?`)) return;
+    const ok = await confirmar({
+      titulo: "Remover produto",
+      mensagem: `Tem certeza que deseja remover "${p.nome}"?`,
+      confirmar: "Remover",
+      perigo: true,
+    });
+    if (!ok) return;
     setErro(null);
     try {
       await removerProduto(p.id);
       await carregar();
+      toast.sucesso("Produto removido.");
     } catch (err) {
-      setErro(extrairErro(err));
+      const msg = extrairErro(err);
+      setErro(msg);
+      toast.erro(msg);
     }
   }
 
@@ -308,7 +341,7 @@ export default function ProdutosPage() {
               </tr>
             </thead>
             <tbody>
-              {produtosFiltrados.map((p) => (
+              {produtosVisiveis.map((p) => (
                 <tr key={p.id} className={p.ativo ? "" : "inativo"}>
                   <td>
                     <strong>{p.nome}</strong>
@@ -336,6 +369,14 @@ export default function ProdutosPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {!carregando && produtosFiltrados.length > 0 && (
+          <Paginacao
+            pagina={paginaAtual}
+            totalPaginas={totalPaginas}
+            onChange={setPagina}
+          />
         )}
       </div>
 

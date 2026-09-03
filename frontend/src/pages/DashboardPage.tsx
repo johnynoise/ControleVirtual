@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   MaisVendidos,
   ResumoEstoque,
@@ -11,29 +11,14 @@ import {
   obterResumoEstoque,
   obterVendasPorDia,
 } from "../services/relatorios";
+import GraficoVendas from "../components/GraficoVendas";
+import { brl, extrairErro } from "../lib/ui";
 
 const PERIODOS: { valor: number; rotulo: string }[] = [
   { valor: 1, rotulo: "Hoje" },
   { valor: 7, rotulo: "7 dias" },
   { valor: 30, rotulo: "30 dias" },
 ];
-
-function brl(valor: number | string): string {
-  const n = typeof valor === "string" ? parseFloat(valor) : valor;
-  return (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function diaCurto(iso: string): string {
-  const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-}
-
-function extrairErro(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
-    ?.detail;
-  if (typeof detail === "string") return detail;
-  return "Não foi possível carregar os relatórios.";
-}
 
 export default function DashboardPage() {
   const [dias, setDias] = useState(7);
@@ -68,11 +53,6 @@ export default function DashboardPage() {
   useEffect(() => {
     carregar(dias);
   }, [dias]);
-
-  const maxFaturamento = useMemo(
-    () => Math.max(1, ...porDia.map((d) => parseFloat(d.faturamento) || 0)),
-    [porDia]
-  );
 
   return (
     <div className="page">
@@ -130,19 +110,7 @@ export default function DashboardPage() {
         {carregando ? (
           <p className="vazio">Carregando...</p>
         ) : (
-          <div className="grafico-barras">
-            {porDia.map((d) => {
-              const valor = parseFloat(d.faturamento) || 0;
-              const altura = Math.round((valor / maxFaturamento) * 100);
-              return (
-                <div className="barra-col" key={d.dia} title={`${diaCurto(d.dia)}: ${brl(valor)}`}>
-                  <div className="barra-valor">{valor > 0 ? brl(valor) : ""}</div>
-                  <div className="barra" style={{ height: `${altura}%` }} />
-                  <div className="barra-label">{diaCurto(d.dia)}</div>
-                </div>
-              );
-            })}
-          </div>
+          <GraficoVendas dados={porDia} />
         )}
       </div>
 

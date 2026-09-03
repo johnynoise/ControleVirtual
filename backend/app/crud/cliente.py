@@ -106,18 +106,31 @@ def ficha(db: Session, cliente_id: int) -> dict | None:
         for pid, nome, qtd, total in favoritos_rows
     ]
 
-    compras = [
-        {
-            "id": v.id,
-            "criado_em": v.criado_em,
-            "forma_pagamento": v.forma_pagamento,
-            "total_liquido": _q(v.total_liquido),
-            "num_itens": sum(i.quantidade for i in v.itens if i.quantidade > 0),
-            "estornada": v.cancelada_em is not None,
-            "tem_devolucao": len(v.devolucoes) > 0,
-        }
-        for v in vendas
-    ]
+    compras = []
+    saldo_devedor_total = Decimal("0.00")
+    for v in vendas:
+        a_prazo = v.forma_pagamento == "fiado"
+        total_pago = sum((Decimal(p.valor) for p in v.pagamentos), Decimal("0"))
+        if a_prazo and v.cancelada_em is None:
+            saldo = (Decimal(v.total_liquido or 0) - total_pago).quantize(_CENTAVOS)
+            saldo = saldo if saldo > 0 else Decimal("0.00")
+        else:
+            saldo = Decimal("0.00")
+        saldo_devedor_total += saldo
+        compras.append(
+            {
+                "id": v.id,
+                "criado_em": v.criado_em,
+                "forma_pagamento": v.forma_pagamento,
+                "total_liquido": _q(v.total_liquido),
+                "num_itens": sum(i.quantidade for i in v.itens if i.quantidade > 0),
+                "estornada": v.cancelada_em is not None,
+                "tem_devolucao": len(v.devolucoes) > 0,
+                "a_prazo": a_prazo,
+                "total_pago": _q(total_pago),
+                "saldo_devedor": saldo,
+            }
+        )
 
     return {
         "cliente": cliente,
@@ -127,6 +140,7 @@ def ficha(db: Session, cliente_id: int) -> dict | None:
         "total_itens": total_itens,
         "primeira_compra": primeira,
         "ultima_compra": ultima,
+        "saldo_devedor": _q(saldo_devedor_total),
         "favoritos": favoritos,
         "compras": compras,
     }

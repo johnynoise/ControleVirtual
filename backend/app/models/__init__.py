@@ -8,6 +8,7 @@ from app.models.cliente import Cliente
 from app.models.devolucao import Devolucao, ItemDevolucao
 from app.models.fornecedor import Fornecedor
 from app.models.movimentacao import MovimentacaoEstoque
+from app.models.pagamento import PagamentoVenda
 from app.models.produto import Produto, VariacaoProduto
 from app.models.venda import ItemVenda, Venda
 
@@ -22,4 +23,5 @@ __all__ = [
     "ItemVenda",
     "Devolucao",
     "ItemDevolucao",
+    "PagamentoVenda",
 ]

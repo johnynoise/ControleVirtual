@@ -6,6 +6,11 @@ import {
   listarCategorias,
   removerCategoria,
 } from "../services/categorias";
+import Paginacao from "../components/Paginacao";
+import { useConfirm, useToast } from "../components/Feedback";
+import { extrairErro } from "../lib/ui";
+
+const POR_PAGINA = 10;
 
 const TIPOS: { valor: TipoCampo; rotulo: string }[] = [
   { valor: "texto", rotulo: "Texto" },
@@ -19,17 +24,9 @@ function campoVazio(): CampoSchema {
   return { chave: "", rotulo: "", tipo: "texto", obrigatorio: false, opcoes: [] };
 }
 
-function extrairErro(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
-    ?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail) && detail.length > 0) {
-    return detail.map((d: { msg?: string }) => d.msg ?? "").join("; ");
-  }
-  return "Não foi possível concluir a operação.";
-}
-
 export default function CategoriasPage() {
+  const toast = useToast();
+  const confirmar = useConfirm();
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -39,6 +36,7 @@ export default function CategoriasPage() {
   const [descricao, setDescricao] = useState("");
   const [campos, setCampos] = useState<CampoSchema[]>([]);
   const [salvando, setSalvando] = useState(false);
+  const [pagina, setPagina] = useState(1);
 
   async function carregar() {
     setCarregando(true);
@@ -98,8 +96,10 @@ export default function CategoriasPage() {
       } else {
         await atualizarCategoria(editandoId, payload);
       }
+      const edicao = editandoId !== null;
       limparFormulario();
       await carregar();
+      toast.sucesso(edicao ? "Categoria salva." : "Categoria criada.");
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -108,16 +108,32 @@ export default function CategoriasPage() {
   }
 
   async function excluir(categoria: Categoria) {
-    if (!confirm(`Remover a categoria "${categoria.nome}"?`)) return;
+    const ok = await confirmar({
+      titulo: "Remover categoria",
+      mensagem: `Tem certeza que deseja remover "${categoria.nome}"?`,
+      confirmar: "Remover",
+      perigo: true,
+    });
+    if (!ok) return;
     setErro(null);
     try {
       await removerCategoria(categoria.id);
       if (editandoId === categoria.id) limparFormulario();
       await carregar();
+      toast.sucesso("Categoria removida.");
     } catch (err) {
-      setErro(extrairErro(err));
+      const msg = extrairErro(err);
+      setErro(msg);
+      toast.erro(msg);
     }
   }
+
+  const totalPaginas = Math.max(1, Math.ceil(categorias.length / POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const categoriasVisiveis = categorias.slice(
+    (paginaAtual - 1) * POR_PAGINA,
+    paginaAtual * POR_PAGINA
+  );
 
   return (
     <div className="page">
@@ -273,7 +289,7 @@ export default function CategoriasPage() {
               </tr>
             </thead>
             <tbody>
-              {categorias.map((cat) => (
+              {categoriasVisiveis.map((cat) => (
                 <tr key={cat.id}>
                   <td>
                     <strong>{cat.nome}</strong>
@@ -306,6 +322,12 @@ export default function CategoriasPage() {
             </tbody>
           </table>
         )}
+
+        <Paginacao
+          pagina={paginaAtual}
+          totalPaginas={totalPaginas}
+          onChange={setPagina}
+        />
       </div>
     </div>
   );

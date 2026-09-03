@@ -1,5 +1,11 @@
 import { api } from "./api";
-import type { DevolucaoCreate, Venda, VendaCreate } from "../types";
+import type {
+  ContaReceber,
+  DevolucaoCreate,
+  PagamentoCreate,
+  Venda,
+  VendaCreate,
+} from "../types";
 
 export async function listarVendas(): Promise<Venda[]> {
   const { data } = await api.get<Venda[]>("/vendas");
@@ -31,5 +37,18 @@ export async function devolverVenda(
   dados: DevolucaoCreate
 ): Promise<Venda> {
   const { data } = await api.post<Venda>(`/vendas/${id}/devolver`, dados);
+  return data;
+}
+
+export async function registrarPagamento(
+  id: number,
+  dados: PagamentoCreate
+): Promise<Venda> {
+  const { data } = await api.post<Venda>(`/vendas/${id}/pagamentos`, dados);
+  return data;
+}
+
+export async function listarContasReceber(): Promise<ContaReceber[]> {
+  const { data } = await api.get<ContaReceber[]>("/vendas/contas-a-receber");
   return data;
 }

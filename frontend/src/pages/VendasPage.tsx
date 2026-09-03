@@ -1,33 +1,27 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import type {
   Cliente,
   FormaPagamento,
   ItemVendaCreate,
-  MotivoDevolucao,
   Produto,
   Venda,
   VendaCreate,
 } from "../types";
 import { listarProdutos } from "../services/produtos";
 import { criarCliente, listarClientes } from "../services/clientes";
-import { criarVenda, devolverVenda, listarVendas } from "../services/vendas";
-import Recibo from "../components/Recibo";
+import { criarVenda } from "../services/vendas";
+import ReciboModal from "../components/ReciboModal";
+import { useToast } from "../components/Feedback";
+import { brl, corAvatar, extrairErro, iniciais } from "../lib/ui";
 
-const PAGAMENTOS: { valor: FormaPagamento; rotulo: string }[] = [
-  { valor: "dinheiro", rotulo: "Dinheiro" },
-  { valor: "pix", rotulo: "PIX" },
-  { valor: "cartao_credito", rotulo: "Cartão crédito" },
-  { valor: "cartao_debito", rotulo: "Cartão débito" },
-  { valor: "outro", rotulo: "Outro" },
-];
-
-const MOTIVOS_DEVOLUCAO: { valor: MotivoDevolucao; rotulo: string }[] = [
-  { valor: "defeito", rotulo: "Defeito" },
-  { valor: "nao_gostou", rotulo: "Cliente não gostou" },
-  { valor: "tamanho_errado", rotulo: "Tamanho/modelo errado" },
-  { valor: "produto_errado", rotulo: "Produto errado" },
-  { valor: "arrependimento", rotulo: "Desistência/arrependimento" },
-  { valor: "outro", rotulo: "Outro" },
+const PAGAMENTOS: { valor: FormaPagamento; rotulo: string; icone: string }[] = [
+  { valor: "dinheiro", rotulo: "Dinheiro", icone: "💵" },
+  { valor: "pix", rotulo: "PIX", icone: "⚡" },
+  { valor: "cartao_credito", rotulo: "Crédito", icone: "💳" },
+  { valor: "cartao_debito", rotulo: "Débito", icone: "🏦" },
+  { valor: "fiado", rotulo: "Fiado", icone: "📓" },
+  { valor: "outro", rotulo: "Outro", icone: "•" },
 ];
 
 interface ItemCarrinho {
@@ -35,39 +29,20 @@ interface ItemCarrinho {
   produto_nome: string;
   quantidade: number;
   preco_unitario: number;
-}
-
-function extrairErro(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
-    ?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail) && detail.length > 0) {
-    return detail.map((d: { msg?: string }) => d.msg ?? "").join("; ");
-  }
-  return "Não foi possível concluir a operação.";
-}
-
-function brl(valor: number | string): string {
-  const n = typeof valor === "string" ? parseFloat(valor) : valor;
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatarData(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  estoque: number;
 }
 
 export default function VendasPage() {
+  const toast = useToast();
   const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [vendas, setVendas] = useState<Venda[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
-  // Item em edição antes de adicionar ao carrinho.
-  const [produtoId, setProdutoId] = useState<number | "">("");
-  const [quantidade, setQuantidade] = useState("1");
-  const [preco, setPreco] = useState("");
+  // Busca de produtos no catálogo.
+  const [busca, setBusca] = useState("");
+  const buscaRef = useRef<HTMLInputElement>(null);
 
   // Carrinho e dados da venda.
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
@@ -82,30 +57,18 @@ export default function VendasPage() {
   const [ncEmail, setNcEmail] = useState("");
   const [salvandoCliente, setSalvandoCliente] = useState(false);
 
-  // Venda exibida no recibo (após finalizar ou ao reimprimir do histórico).
+  // Venda exibida no recibo após finalizar.
   const [vendaRecibo, setVendaRecibo] = useState<Venda | null>(null);
-
-  // Devolução: venda selecionada, quantidades por item, motivo e observação.
-  const [vendaDevolucao, setVendaDevolucao] = useState<Venda | null>(null);
-  const [devQtd, setDevQtd] = useState<Record<number, string>>({});
-  const [devMotivo, setDevMotivo] = useState<MotivoDevolucao>("defeito");
-  const [devObs, setDevObs] = useState("");
-  const [devErro, setDevErro] = useState<string | null>(null);
-  const [salvandoDev, setSalvandoDev] = useState(false);
-
-  const produtoSelecionado = produtos.find((p) => p.id === produtoId) ?? null;
 
   async function carregar() {
     setCarregando(true);
     setErro(null);
     try {
-      const [prods, vnds, clis] = await Promise.all([
-        listarProdutos(),
-        listarVendas(),
+      const [prods, clis] = await Promise.all([
+        listarProdutos({ apenas_ativos: true }),
         listarClientes({ apenas_ativos: true }),
       ]);
       setProdutos(prods);
-      setVendas(vnds);
       setClientes(clis);
     } catch (err) {
       setErro(extrairErro(err));
@@ -118,40 +81,80 @@ export default function VendasPage() {
     carregar();
   }, []);
 
-  // Ao escolher o produto, pré-preenche o preço com o preço de venda dele.
-  function escolherProduto(id: number | "") {
-    setProdutoId(id);
-    const p = produtos.find((x) => x.id === id);
-    setPreco(p ? p.preco_venda : "");
-  }
+  // Foco automático na busca ao abrir (fluxo rápido de balcão).
+  useEffect(() => {
+    if (!carregando) buscaRef.current?.focus();
+  }, [carregando]);
+
+  // Atalhos de teclado (estilo PDV): teclas de função não conflitam com a
+  // digitação, então funcionam mesmo com o cursor em um campo de texto.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (vendaRecibo) setVendaRecibo(null);
+        else if (novoCliente) cancelarNovoCliente();
+        return;
+      }
+      // Com o recibo aberto, ignora os demais atalhos.
+      if (vendaRecibo) return;
+
+      if (e.key === "F2") {
+        e.preventDefault();
+        finalizar();
+      } else if (e.key === "F3") {
+        e.preventDefault(); // evita abrir a busca do navegador
+        buscaRef.current?.focus();
+        buscaRef.current?.select();
+      } else if (e.key === "F4") {
+        e.preventDefault();
+        setNovoCliente(true);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendaRecibo, novoCliente, carrinho, salvando, clienteId, formaPagamento, desconto]);
+
+  const produtosFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return produtos;
+    return produtos.filter(
+      (p) =>
+        p.nome.toLowerCase().includes(termo) ||
+        (p.sku ?? "").toLowerCase().includes(termo) ||
+        (p.codigo_barras ?? "").toLowerCase().includes(termo)
+    );
+  }, [produtos, busca]);
 
   const totalBruto = useMemo(
     () => carrinho.reduce((acc, i) => acc + i.preco_unitario * i.quantidade, 0),
     [carrinho]
   );
+  const totalItens = useMemo(
+    () => carrinho.reduce((acc, i) => acc + i.quantidade, 0),
+    [carrinho]
+  );
   const descontoNum = parseFloat(desconto) || 0;
   const totalLiquido = Math.max(0, totalBruto - descontoNum);
 
-  function adicionarAoCarrinho() {
-    if (produtoId === "") {
-      setErro("Selecione um produto para adicionar.");
-      return;
-    }
-    const qtd = parseInt(quantidade, 10) || 0;
-    if (qtd <= 0) {
-      setErro("A quantidade deve ser maior que zero.");
-      return;
-    }
-    const p = produtos.find((x) => x.id === produtoId);
-    if (!p) return;
+  // Adiciona um produto ao carrinho (ou incrementa se já estiver lá),
+  // respeitando o estoque disponível.
+  function adicionarProduto(p: Produto) {
     setErro(null);
-
+    if (p.estoque <= 0) {
+      toast.erro(`${p.nome} está sem estoque.`);
+      return;
+    }
+    const noCarrinho = carrinho.find((i) => i.produto_id === p.id);
+    if (noCarrinho && noCarrinho.quantidade >= p.estoque) {
+      toast.erro(`Estoque máximo de ${p.nome} atingido (${p.estoque}).`);
+      return;
+    }
     setCarrinho((atual) => {
-      // Se o produto já está no carrinho, soma a quantidade.
-      const existe = atual.find((i) => i.produto_id === produtoId);
+      const existe = atual.find((i) => i.produto_id === p.id);
       if (existe) {
         return atual.map((i) =>
-          i.produto_id === produtoId ? { ...i, quantidade: i.quantidade + qtd } : i
+          i.produto_id === p.id ? { ...i, quantidade: i.quantidade + 1 } : i
         );
       }
       return [
@@ -159,19 +162,67 @@ export default function VendasPage() {
         {
           produto_id: p.id,
           produto_nome: p.nome,
-          quantidade: qtd,
-          preco_unitario: parseFloat(preco) || parseFloat(p.preco_venda) || 0,
+          quantidade: 1,
+          preco_unitario: parseFloat(p.preco_venda) || 0,
+          estoque: p.estoque,
         },
       ];
     });
+  }
 
-    setProdutoId("");
-    setQuantidade("1");
-    setPreco("");
+  function alterarQuantidade(produto_id: number, delta: number) {
+    setCarrinho((atual) =>
+      atual
+        .map((i) => {
+          if (i.produto_id !== produto_id) return i;
+          const nova = i.quantidade + delta;
+          if (delta > 0 && nova > i.estoque) {
+            toast.erro(`Estoque máximo de ${i.produto_nome} atingido (${i.estoque}).`);
+            return i;
+          }
+          return { ...i, quantidade: nova };
+        })
+        .filter((i) => i.quantidade > 0)
+    );
+  }
+
+  function definirQuantidade(produto_id: number, valor: string) {
+    const q = parseInt(valor, 10);
+    setCarrinho((atual) =>
+      atual.map((i) => {
+        if (i.produto_id !== produto_id) return i;
+        if (Number.isNaN(q)) return i;
+        const limitada = Math.min(Math.max(1, q), i.estoque);
+        if (q > i.estoque) {
+          toast.erro(`${i.produto_nome} tem apenas ${i.estoque} em estoque.`);
+        }
+        return { ...i, quantidade: limitada };
+      })
+    );
+  }
+
+  function definirPreco(produto_id: number, valor: string) {
+    const preco = parseFloat(valor);
+    setCarrinho((atual) =>
+      atual.map((i) =>
+        i.produto_id === produto_id
+          ? { ...i, preco_unitario: Number.isNaN(preco) ? 0 : Math.max(0, preco) }
+          : i
+      )
+    );
   }
 
   function removerDoCarrinho(produto_id: number) {
     setCarrinho((atual) => atual.filter((i) => i.produto_id !== produto_id));
+  }
+
+  // Enter na busca adiciona o primeiro produto filtrado (leitor de código
+  // de barras ou digitação rápida).
+  function onBuscaKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && produtosFiltrados.length > 0) {
+      adicionarProduto(produtosFiltrados[0]);
+      setBusca("");
+    }
   }
 
   function cancelarNovoCliente() {
@@ -195,10 +246,10 @@ export default function VendasPage() {
         email: ncEmail.trim() || null,
         ativo: true,
       });
-      // Atualiza a lista e já seleciona o cliente recém-criado.
       setClientes(await listarClientes({ apenas_ativos: true }));
       setClienteId(criado.id);
       cancelarNovoCliente();
+      toast.sucesso(`Cliente ${criado.nome} cadastrado.`);
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -212,80 +263,17 @@ export default function VendasPage() {
     cancelarNovoCliente();
     setFormaPagamento("dinheiro");
     setDesconto("0");
-    setProdutoId("");
-    setQuantidade("1");
-    setPreco("");
-  }
-
-  function abrirDevolucao(v: Venda) {
-    setVendaDevolucao(v);
-    setDevQtd({});
-    setDevMotivo("defeito");
-    setDevObs("");
-    setDevErro(null);
-  }
-
-  function fecharDevolucao() {
-    setVendaDevolucao(null);
-  }
-
-  // Itens ainda passíveis de devolução (quantidade restante > 0).
-  const itensDevolviveis = useMemo(
-    () => (vendaDevolucao?.itens ?? []).filter((i) => i.quantidade > 0),
-    [vendaDevolucao]
-  );
-
-  // Prévia do valor total a devolver conforme as quantidades escolhidas.
-  const totalDevolucao = useMemo(
-    () =>
-      itensDevolviveis.reduce((acc, i) => {
-        const q = parseInt(devQtd[i.id] ?? "", 10) || 0;
-        return acc + q * (parseFloat(i.preco_unitario) || 0);
-      }, 0),
-    [itensDevolviveis, devQtd]
-  );
-
-  function preencherTudo() {
-    const tudo: Record<number, string> = {};
-    itensDevolviveis.forEach((i) => {
-      tudo[i.id] = String(i.quantidade);
-    });
-    setDevQtd(tudo);
-  }
-
-  async function confirmarDevolucao() {
-    if (!vendaDevolucao) return;
-    const itens = itensDevolviveis
-      .map((i) => ({
-        item_venda_id: i.id,
-        quantidade: parseInt(devQtd[i.id] ?? "", 10) || 0,
-      }))
-      .filter((i) => i.quantidade > 0);
-
-    if (itens.length === 0) {
-      setDevErro("Informe a quantidade de pelo menos um item.");
-      return;
-    }
-    setSalvandoDev(true);
-    setDevErro(null);
-    try {
-      await devolverVenda(vendaDevolucao.id, {
-        motivo: devMotivo,
-        observacao: devObs.trim() || null,
-        itens,
-      });
-      fecharDevolucao();
-      await carregar();
-    } catch (err) {
-      setDevErro(extrairErro(err));
-    } finally {
-      setSalvandoDev(false);
-    }
+    setBusca("");
   }
 
   async function finalizar() {
     if (carrinho.length === 0) {
       setErro("Adicione pelo menos um item à venda.");
+      return;
+    }
+    if (formaPagamento === "fiado" && clienteId === "") {
+      setErro("Venda no fiado exige um cliente. Selecione ou cadastre um.");
+      toast.erro("Selecione um cliente para vender no fiado.");
       return;
     }
     setSalvando(true);
@@ -308,8 +296,9 @@ export default function VendasPage() {
       const venda = await criarVenda(payload);
       limparVenda();
       await carregar();
-      // Abre o recibo da venda recém-finalizada.
       setVendaRecibo(venda);
+      toast.sucesso(`Venda #${venda.id} finalizada · ${brl(venda.total_liquido)}`);
+      buscaRef.current?.focus();
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -319,19 +308,37 @@ export default function VendasPage() {
 
   return (
     <div className="page">
-      <div className="page-title">
-        <span className="title-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="9" cy="20" r="1.5" />
-            <circle cx="18" cy="20" r="1.5" />
-            <path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
+      <div className="pdv-topbar">
+        <div className="page-title">
+          <span className="title-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="9" cy="20" r="1.5" />
+              <circle cx="18" cy="20" r="1.5" />
+              <path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
+            </svg>
+          </span>
+          <div>
+            <h1>Ponto de venda</h1>
+            <p className="pdv-sub">Toque nos produtos para montar a venda.</p>
+          </div>
+        </div>
+        <Link to="/vendas/historico" className="btn secundario">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 3v5h5" />
+            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+            <path d="M12 7v5l4 2" />
           </svg>
-        </span>
-        <h1>Nova venda</h1>
+          Histórico
+        </Link>
       </div>
-      <p className="subtitle">
-        Escolha os produtos, veja o total e finalize. O estoque é atualizado sozinho.
-      </p>
+
+      <div className="pdv-atalhos">
+        <span><kbd>F2</kbd> Finalizar</span>
+        <span><kbd>F3</kbd> Buscar</span>
+        <span><kbd>F4</kbd> Novo cliente</span>
+        <span><kbd>Enter</kbd> Adicionar 1º resultado</span>
+        <span><kbd>Esc</kbd> Fechar</span>
+      </div>
 
       {erro && <div className="alert erro">{erro}</div>}
 
@@ -341,425 +348,286 @@ export default function VendasPage() {
         </div>
       )}
 
-      <div className="card form">
-        <h2>1. Adicione os produtos</h2>
-
-        <div className="grid-4">
-          <label style={{ gridColumn: "span 2" }}>
-            Produto
-            <select
-              value={produtoId}
-              onChange={(e) =>
-                escolherProduto(e.target.value === "" ? "" : Number(e.target.value))
-              }
-            >
-              <option value="">Selecione...</option>
-              {produtos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome} (estoque: {p.estoque})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Quantidade
+      <div className="pdv-layout">
+        {/* ----------------------- Catálogo ----------------------- */}
+        <section className="pdv-catalogo card">
+          <div className="busca pdv-busca">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
             <input
-              type="number"
-              min="1"
-              value={quantidade}
-              onChange={(e) => setQuantidade(e.target.value)}
+              ref={buscaRef}
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              onKeyDown={onBuscaKeyDown}
+              placeholder="Buscar por nome, SKU ou código de barras..."
             />
-          </label>
-          <label>
-            Preço unitário
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={preco}
-              onChange={(e) => setPreco(e.target.value)}
-              placeholder={produtoSelecionado?.preco_venda ?? "0,00"}
-            />
-          </label>
-        </div>
-
-        <div className="form-acoes">
-          <button type="button" className="btn primario" onClick={adicionarAoCarrinho}>
-            + Adicionar ao carrinho
-          </button>
-        </div>
-
-        {carrinho.length > 0 && (
-          <table className="tabela">
-            <thead>
-              <tr>
-                <th>Produto</th>
-                <th>Qtd.</th>
-                <th>Preço un.</th>
-                <th>Subtotal</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {carrinho.map((i) => (
-                <tr key={i.produto_id}>
-                  <td>{i.produto_nome}</td>
-                  <td>{i.quantidade}</td>
-                  <td>{brl(i.preco_unitario)}</td>
-                  <td>{brl(i.preco_unitario * i.quantidade)}</td>
-                  <td className="acoes">
-                    <button
-                      className="btn perigo pequeno"
-                      onClick={() => removerDoCarrinho(i.produto_id)}
-                    >
-                      Remover
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        <h3>2. Cliente e pagamento (opcional)</h3>
-        <div className="grid-4">
-          <label style={{ gridColumn: "span 2" }}>
-            Cliente
-            <div className="linha-inline">
-              <select
-                value={clienteId}
-                onChange={(e) =>
-                  setClienteId(e.target.value === "" ? "" : Number(e.target.value))
-                }
-                disabled={novoCliente}
-              >
-                <option value="">Sem cliente</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </select>
-              {!novoCliente && (
-                <button
-                  type="button"
-                  className="btn secundario pequeno"
-                  onClick={() => setNovoCliente(true)}
-                >
-                  + Novo
-                </button>
-              )}
-            </div>
-          </label>
-          <label>
-            Pagamento
-            <select
-              value={formaPagamento}
-              onChange={(e) => setFormaPagamento(e.target.value as FormaPagamento)}
-            >
-              {PAGAMENTOS.map((p) => (
-                <option key={p.valor} value={p.valor}>
-                  {p.rotulo}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Desconto (R$)
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={desconto}
-              onChange={(e) => setDesconto(e.target.value)}
-            />
-          </label>
-        </div>
-
-        {novoCliente && (
-          <div className="novo-cliente">
-            <h3>Cadastrar novo cliente</h3>
-            <div className="grid-4">
-              <label style={{ gridColumn: "span 2" }}>
-                Nome
-                <input
-                  value={ncNome}
-                  onChange={(e) => setNcNome(e.target.value)}
-                  placeholder="Ex.: Maria Silva"
-                />
-              </label>
-              <label>
-                Telefone
-                <input
-                  value={ncTelefone}
-                  onChange={(e) => setNcTelefone(e.target.value)}
-                  placeholder="Opcional"
-                />
-              </label>
-              <label>
-                E-mail
-                <input
-                  type="email"
-                  value={ncEmail}
-                  onChange={(e) => setNcEmail(e.target.value)}
-                  placeholder="Opcional"
-                />
-              </label>
-            </div>
-            <div className="form-acoes">
-              <button
-                type="button"
-                className="btn primario pequeno"
-                onClick={salvarNovoCliente}
-                disabled={salvandoCliente}
-              >
-                {salvandoCliente ? "Salvando..." : "Salvar cliente"}
-              </button>
-              <button
-                type="button"
-                className="btn secundario pequeno"
-                onClick={cancelarNovoCliente}
-              >
-                Cancelar
-              </button>
-            </div>
           </div>
-        )}
 
-        <div className="margem-preview">
-          <span>
-            Total bruto: <strong>{brl(totalBruto)}</strong>
-          </span>
-          <span>
-            Desconto: <strong>{brl(descontoNum)}</strong>
-          </span>
-          <span>
-            Total a pagar: <strong>{brl(totalLiquido)}</strong>
-          </span>
-        </div>
-
-        <div className="form-acoes">
-          <button
-            className="btn primario grande"
-            onClick={finalizar}
-            disabled={salvando || carrinho.length === 0}
-          >
-            {salvando ? "Finalizando..." : `Finalizar venda · ${brl(totalLiquido)}`}
-          </button>
-          {carrinho.length > 0 && (
-            <button type="button" className="btn secundario" onClick={limparVenda}>
-              Cancelar
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Vendas realizadas</h2>
-        {carregando ? (
-          <p className="vazio">Carregando...</p>
-        ) : vendas.length === 0 ? (
-          <p className="vazio">Nenhuma venda ainda.</p>
-        ) : (
-          <table className="tabela">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Itens</th>
-                <th>Pagamento</th>
-                <th>Total</th>
-                <th>Lucro</th>
-                <th>Margem</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {vendas.map((v) => {
-                const estornada = Boolean(v.cancelada_em);
-                const temDevolucao = (v.devolucoes?.length ?? 0) > 0;
+          {carregando ? (
+            <p className="vazio">Carregando produtos...</p>
+          ) : produtosFiltrados.length === 0 ? (
+            <p className="vazio">Nenhum produto encontrado.</p>
+          ) : (
+            <div className="pdv-grid">
+              {produtosFiltrados.map((p) => {
+                const semEstoque = p.estoque <= 0;
                 return (
-                  <tr key={v.id} className={estornada ? "inativo" : undefined}>
-                    <td className="muted">{formatarData(v.criado_em)}</td>
-                    <td>
-                      {v.cliente_nome ?? <span className="muted">—</span>}
-                      {estornada ? (
-                        <span
-                          className="chip mov-saida"
-                          title={v.motivo_cancelamento ?? undefined}
-                          style={{ marginLeft: "0.4rem" }}
-                        >
-                          Estornada
-                        </span>
-                      ) : (
-                        temDevolucao && (
-                          <span
-                            className="chip mov-ajuste"
-                            style={{ marginLeft: "0.4rem" }}
-                          >
-                            Devolução parcial
-                          </span>
-                        )
-                      )}
-                    </td>
-                    <td className="muted">
-                      {v.itens.reduce((acc, i) => acc + i.quantidade, 0)} un
-                      {" · "}
-                      {v.itens.length} {v.itens.length === 1 ? "item" : "itens"}
-                    </td>
-                    <td className="muted">{v.forma_pagamento ?? "—"}</td>
-                    <td>
-                      <strong>{brl(v.total_liquido)}</strong>
-                      {parseFloat(v.desconto) > 0 && (
-                        <div className="muted">desc. {brl(v.desconto)}</div>
-                      )}
-                    </td>
-                    <td>{brl(v.lucro)}</td>
-                    <td>{v.margem_percentual}%</td>
-                    <td className="acoes">
-                      <button
-                        className="btn secundario pequeno"
-                        onClick={() => setVendaRecibo(v)}
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`pdv-produto${semEstoque ? " sem-estoque" : ""}`}
+                    onClick={() => adicionarProduto(p)}
+                    title={semEstoque ? "Sem estoque" : `Adicionar ${p.nome}`}
+                  >
+                    <span
+                      className="pdv-produto-avatar"
+                      style={{ background: corAvatar(p.nome) }}
+                    >
+                      {iniciais(p.nome)}
+                    </span>
+                    <span className="pdv-produto-nome">{p.nome}</span>
+                    <span className="pdv-produto-rodape">
+                      <strong>{brl(p.preco_venda)}</strong>
+                      <span
+                        className={`pdv-estoque${semEstoque ? " zero" : p.estoque <= p.estoque_minimo ? " baixo" : ""}`}
                       >
-                        Recibo
-                      </button>
-                      {!estornada && (
-                        <button
-                          className="btn perigo pequeno"
-                          onClick={() => abrirDevolucao(v)}
-                        >
-                          Devolver
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                        {semEstoque ? "esgotado" : `${p.estoque} un`}
+                      </span>
+                    </span>
+                  </button>
                 );
               })}
-            </tbody>
-          </table>
-        )}
+            </div>
+          )}
+        </section>
+
+        {/* ----------------------- Carrinho ----------------------- */}
+        <aside className="pdv-carrinho card">
+          <div className="pdv-carrinho-head">
+            <h2>
+              Carrinho
+              {totalItens > 0 && <span className="pdv-badge">{totalItens}</span>}
+            </h2>
+            {carrinho.length > 0 && (
+              <button
+                type="button"
+                className="btn perigo pequeno"
+                onClick={limparVenda}
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+
+          {carrinho.length === 0 ? (
+            <div className="pdv-carrinho-vazio">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="9" cy="20" r="1.5" />
+                <circle cx="18" cy="20" r="1.5" />
+                <path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
+              </svg>
+              <p>Nenhum item ainda.</p>
+              <span>Selecione produtos ao lado para começar.</span>
+            </div>
+          ) : (
+            <>
+              <ul className="pdv-itens">
+                {carrinho.map((i) => (
+                  <li key={i.produto_id} className="pdv-item">
+                    <div className="pdv-item-topo">
+                      <span className="pdv-item-nome">{i.produto_nome}</span>
+                      <button
+                        type="button"
+                        className="pdv-item-remover"
+                        onClick={() => removerDoCarrinho(i.produto_id)}
+                        title="Remover"
+                      >
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="pdv-item-baixo">
+                      <div className="pdv-stepper">
+                        <button
+                          type="button"
+                          onClick={() => alterarQuantidade(i.produto_id, -1)}
+                          aria-label="Diminuir"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={i.quantidade}
+                          onChange={(e) =>
+                            definirQuantidade(i.produto_id, e.target.value)
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => alterarQuantidade(i.produto_id, 1)}
+                          aria-label="Aumentar"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <label className="pdv-item-preco">
+                        <span>R$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={i.preco_unitario}
+                          onChange={(e) =>
+                            definirPreco(i.produto_id, e.target.value)
+                          }
+                        />
+                      </label>
+                      <span className="pdv-item-subtotal">
+                        {brl(i.preco_unitario * i.quantidade)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="pdv-cliente">
+                <label>
+                  Cliente
+                  <div className="linha-inline">
+                    <select
+                      value={clienteId}
+                      onChange={(e) =>
+                        setClienteId(e.target.value === "" ? "" : Number(e.target.value))
+                      }
+                      disabled={novoCliente}
+                    >
+                      <option value="">Sem cliente</option>
+                      {clientes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome}
+                        </option>
+                      ))}
+                    </select>
+                    {!novoCliente && (
+                      <button
+                        type="button"
+                        className="btn secundario pequeno"
+                        onClick={() => setNovoCliente(true)}
+                      >
+                        + Novo
+                      </button>
+                    )}
+                  </div>
+                </label>
+
+                {novoCliente && (
+                  <div className="pdv-novo-cliente">
+                    <input
+                      value={ncNome}
+                      onChange={(e) => setNcNome(e.target.value)}
+                      placeholder="Nome do cliente"
+                    />
+                    <input
+                      value={ncTelefone}
+                      onChange={(e) => setNcTelefone(e.target.value)}
+                      placeholder="Telefone (opcional)"
+                    />
+                    <input
+                      type="email"
+                      value={ncEmail}
+                      onChange={(e) => setNcEmail(e.target.value)}
+                      placeholder="E-mail (opcional)"
+                    />
+                    <div className="form-acoes" style={{ marginTop: 0 }}>
+                      <button
+                        type="button"
+                        className="btn primario pequeno"
+                        onClick={salvarNovoCliente}
+                        disabled={salvandoCliente}
+                      >
+                        {salvandoCliente ? "Salvando..." : "Salvar"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn secundario pequeno"
+                        onClick={cancelarNovoCliente}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pdv-pagamento">
+                <span className="pdv-label">Forma de pagamento</span>
+                <div className="pdv-pgto-pills">
+                  {PAGAMENTOS.map((p) => (
+                    <button
+                      key={p.valor}
+                      type="button"
+                      className={`pdv-pill${formaPagamento === p.valor ? " ativo" : ""}`}
+                      onClick={() => setFormaPagamento(p.valor)}
+                    >
+                      <span className="pdv-pill-icone">{p.icone}</span>
+                      {p.rotulo}
+                    </button>
+                  ))}
+                </div>
+                {formaPagamento === "fiado" && (
+                  <p
+                    className={`pdv-fiado-aviso${clienteId === "" ? " alerta" : ""}`}
+                  >
+                    {clienteId === ""
+                      ? "⚠ Selecione um cliente acima: o fiado fica no nome dele."
+                      : "📓 Esta venda entra como saldo devedor do cliente."}
+                  </p>
+                )}
+              </div>
+
+              <div className="pdv-totais">
+                <div className="pdv-linha-desc">
+                  <span>Subtotal</span>
+                  <span>{brl(totalBruto)}</span>
+                </div>
+                <div className="pdv-linha-desc">
+                  <label htmlFor="pdv-desconto">Desconto (R$)</label>
+                  <input
+                    id="pdv-desconto"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={desconto}
+                    onChange={(e) => setDesconto(e.target.value)}
+                  />
+                </div>
+                <div className="pdv-total">
+                  <span>Total</span>
+                  <strong>{brl(totalLiquido)}</strong>
+                </div>
+              </div>
+
+              <button
+                className="btn primario pdv-finalizar"
+                onClick={finalizar}
+                disabled={salvando || carrinho.length === 0}
+              >
+                {salvando
+                  ? "Finalizando..."
+                  : `${formaPagamento === "fiado" ? "Fiar" : "Finalizar"} · ${brl(totalLiquido)}`}
+                {!salvando && <kbd className="pdv-kbd-btn">F2</kbd>}
+              </button>
+            </>
+          )}
+        </aside>
       </div>
 
       {vendaRecibo && (
-        <div className="recibo-overlay" onClick={() => setVendaRecibo(null)}>
-          <div className="recibo-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="recibo-area">
-              <Recibo venda={vendaRecibo} />
-            </div>
-            <div className="recibo-acoes no-print">
-              <button className="btn primario" onClick={() => window.print()}>
-                Imprimir
-              </button>
-              <button className="btn secundario" onClick={() => setVendaRecibo(null)}>
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {vendaDevolucao && (
-        <div className="recibo-overlay" onClick={fecharDevolucao}>
-          <div className="modal-box form" onClick={(e) => e.stopPropagation()}>
-            <h2>Devolver itens · venda #{vendaDevolucao.id}</h2>
-            <p className="muted" style={{ marginBottom: "1rem" }}>
-              Informe quanto de cada item está voltando. O estoque é reposto e a
-              venda é recalculada. Devolver tudo estorna a venda.
-            </p>
-
-            {devErro && <div className="alert erro">{devErro}</div>}
-
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th className="num">Vendido</th>
-                  <th className="num">Preço un.</th>
-                  <th className="num">Devolver</th>
-                </tr>
-              </thead>
-              <tbody>
-                {itensDevolviveis.map((i) => (
-                  <tr key={i.id}>
-                    <td>{i.produto_nome}</td>
-                    <td className="num">{i.quantidade}</td>
-                    <td className="num">{brl(i.preco_unitario)}</td>
-                    <td className="num">
-                      <input
-                        type="number"
-                        min="0"
-                        max={i.quantidade}
-                        value={devQtd[i.id] ?? ""}
-                        placeholder="0"
-                        style={{ width: "5rem", textAlign: "right" }}
-                        onChange={(e) =>
-                          setDevQtd((atual) => ({ ...atual, [i.id]: e.target.value }))
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="form-acoes" style={{ marginTop: "0.75rem" }}>
-              <button
-                type="button"
-                className="btn secundario pequeno"
-                onClick={preencherTudo}
-              >
-                Devolver tudo
-              </button>
-            </div>
-
-            <div className="grid-2" style={{ marginTop: "1rem" }}>
-              <label>
-                Motivo
-                <select
-                  value={devMotivo}
-                  onChange={(e) => setDevMotivo(e.target.value as MotivoDevolucao)}
-                >
-                  {MOTIVOS_DEVOLUCAO.map((m) => (
-                    <option key={m.valor} value={m.valor}>
-                      {m.rotulo}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Observação (opcional)
-                <input
-                  value={devObs}
-                  onChange={(e) => setDevObs(e.target.value)}
-                  placeholder="Ex.: costura solta"
-                />
-              </label>
-            </div>
-
-            <div className="margem-preview" style={{ marginTop: "1rem" }}>
-              <span>
-                Total a devolver: <strong>{brl(totalDevolucao)}</strong>
-              </span>
-            </div>
-
-            <div className="form-acoes">
-              <button
-                className="btn perigo"
-                onClick={confirmarDevolucao}
-                disabled={salvandoDev || totalDevolucao <= 0}
-              >
-                {salvandoDev ? "Processando..." : "Confirmar devolução"}
-              </button>
-              <button
-                type="button"
-                className="btn secundario"
-                onClick={fecharDevolucao}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
+        <ReciboModal venda={vendaRecibo} onFechar={() => setVendaRecibo(null)} />
       )}
     </div>
   );

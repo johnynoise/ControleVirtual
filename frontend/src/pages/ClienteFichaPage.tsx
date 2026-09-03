@@ -1,27 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { FichaCliente } from "../types";
+import type { FichaCliente, Venda } from "../types";
 import { obterFichaCliente } from "../services/clientes";
+import { obterVenda } from "../services/vendas";
+import ReceberPagamentoModal from "../components/ReceberPagamentoModal";
+import { useToast } from "../components/Feedback";
 import { BarrasHorizontais, LinhaSaldo } from "./relatorios/Charts";
-
-function brl(valor: number | string | null | undefined): string {
-  const n = typeof valor === "string" ? parseFloat(valor) : valor ?? 0;
-  return (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function dataBR(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("pt-BR");
-}
-
-function dataHoraBR(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
+import { brl, dataBR, dataHora, extrairErro, linkWhatsapp } from "../lib/ui";
 
 function diasDesde(iso: string | null | undefined): number | null {
   if (!iso) return null;
@@ -30,41 +15,39 @@ function diasDesde(iso: string | null | undefined): number | null {
   return Math.floor((Date.now() - d.getTime()) / 86_400_000);
 }
 
-/** Monta um link de WhatsApp a partir do telefone (formato brasileiro). */
-function linkWhatsapp(telefone: string | null | undefined): string | null {
-  if (!telefone) return null;
-  let digitos = telefone.replace(/\D/g, "");
-  if (digitos.length < 10) return null;
-  if (digitos.length <= 11) digitos = `55${digitos}`;
-  return `https://wa.me/${digitos}`;
-}
-
-function extrairErro(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
-    ?.detail;
-  if (typeof detail === "string") return detail;
-  return "Não foi possível carregar a ficha do cliente.";
-}
-
 export default function ClienteFichaPage() {
   const { id } = useParams<{ id: string }>();
+  const toast = useToast();
   const [ficha, setFicha] = useState<FichaCliente | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Venda de fiado selecionada para registrar recebimento.
+  const [vendaReceber, setVendaReceber] = useState<Venda | null>(null);
+
+  function carregarFicha() {
     if (!id) return;
-    let ativo = true;
     setCarregando(true);
     setErro(null);
     obterFichaCliente(Number(id))
-      .then((f) => ativo && setFicha(f))
-      .catch((e) => ativo && setErro(extrairErro(e)))
-      .finally(() => ativo && setCarregando(false));
-    return () => {
-      ativo = false;
-    };
+      .then((f) => setFicha(f))
+      .catch((e) => setErro(extrairErro(e)))
+      .finally(() => setCarregando(false));
+  }
+
+  useEffect(() => {
+    carregarFicha();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function abrirReceber(vendaId: number) {
+    try {
+      const venda = await obterVenda(vendaId);
+      setVendaReceber(venda);
+    } catch (e) {
+      toast.erro(extrairErro(e));
+    }
+  }
 
   // Gastos agregados por mês (só compras não estornadas), últimos 12 meses.
   const gastosPorMes = useMemo(() => {
@@ -165,6 +148,17 @@ export default function ClienteFichaPage() {
                 </span>
               )}
             </div>
+            <div className="kpi">
+              <span className="kpi-label">Saldo devedor (fiado)</span>
+              <span
+                className={`kpi-valor ${parseFloat(ficha.saldo_devedor) > 0 ? "ambar" : ""}`}
+              >
+                {brl(ficha.saldo_devedor)}
+              </span>
+              {parseFloat(ficha.saldo_devedor) > 0 && (
+                <span className="kpi-sub">a receber</span>
+              )}
+            </div>
           </div>
 
           {gastosPorMes.length >= 2 && (
@@ -208,31 +202,65 @@ export default function ClienteFichaPage() {
                     <th className="num">Itens</th>
                     <th className="num">Total</th>
                     <th>Status</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ficha.compras.map((c) => (
-                    <tr key={c.id} className={c.estornada ? "inativo" : undefined}>
-                      <td className="muted">{dataHoraBR(c.criado_em)}</td>
-                      <td className="muted">{c.forma_pagamento ?? "—"}</td>
-                      <td className="num">{c.num_itens}</td>
-                      <td className="num">{brl(c.total_liquido)}</td>
-                      <td>
-                        {c.estornada ? (
-                          <span className="chip mov-saida">Estornada</span>
-                        ) : c.tem_devolucao ? (
-                          <span className="chip mov-ajuste">Devolução parcial</span>
-                        ) : (
-                          <span className="chip mov-entrada">Concluída</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {ficha.compras.map((c) => {
+                    const saldo = parseFloat(c.saldo_devedor) || 0;
+                    const fiadoAberto = c.a_prazo && !c.estornada && saldo > 0;
+                    return (
+                      <tr key={c.id} className={c.estornada ? "inativo" : undefined}>
+                        <td className="muted">{dataHora(c.criado_em)}</td>
+                        <td className="muted">
+                          {c.forma_pagamento === "fiado" ? "Fiado" : c.forma_pagamento ?? "—"}
+                        </td>
+                        <td className="num">{c.num_itens}</td>
+                        <td className="num">{brl(c.total_liquido)}</td>
+                        <td>
+                          {c.estornada ? (
+                            <span className="chip mov-saida">Estornada</span>
+                          ) : fiadoAberto ? (
+                            <span className="chip fiado" title={`Falta ${brl(saldo)}`}>
+                              Fiado · falta {brl(saldo)}
+                            </span>
+                          ) : c.a_prazo ? (
+                            <span className="chip quitado">Fiado quitado</span>
+                          ) : c.tem_devolucao ? (
+                            <span className="chip mov-ajuste">Devolução parcial</span>
+                          ) : (
+                            <span className="chip mov-entrada">Concluída</span>
+                          )}
+                        </td>
+                        <td className="acoes">
+                          {fiadoAberto && (
+                            <button
+                              className="btn primario pequeno"
+                              onClick={() => abrirReceber(c.id)}
+                            >
+                              Receber
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
           </div>
         </>
+      )}
+
+      {vendaReceber && (
+        <ReceberPagamentoModal
+          venda={vendaReceber}
+          onFechar={() => setVendaReceber(null)}
+          onSucesso={() => {
+            setVendaReceber(null);
+            carregarFicha();
+          }}
+        />
       )}
     </div>
   );

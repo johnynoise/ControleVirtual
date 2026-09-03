@@ -72,6 +72,13 @@ class Venda(Base):
         passive_deletes=True,
         order_by="Devolucao.criado_em",
     )
+    pagamentos = relationship(
+        "PagamentoVenda",
+        back_populates="venda",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="PagamentoVenda.criado_em",
+    )
     cliente = relationship("Cliente")
 
 

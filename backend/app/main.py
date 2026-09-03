@@ -1,5 +1,6 @@
 """Ponto de entrada da API do ControleVirtual."""
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,12 +22,6 @@ from app.routers import (
 from app import models  # noqa: F401
 
 logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title=settings.app_name,
-    description="API do sistema de controle de vendas ControleVirtual.",
-    version="0.1.0",
-)
 
 
 def _migrar_colunas() -> None:
@@ -59,18 +54,28 @@ def _migrar_colunas() -> None:
         logger.warning("Não foi possível migrar colunas no startup: %s", exc)
 
 
-@app.on_event("startup")
-def criar_tabelas() -> None:
-    """Cria as tabelas no banco caso ainda não existam.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Ciclo de vida da aplicação.
 
-    Solução simples para desenvolvimento local. Quando o projeto amadurecer,
-    a evolução do schema deve migrar para o Alembic.
+    No startup, cria as tabelas que ainda não existem e aplica a mini-migração
+    de colunas. Solução simples para desenvolvimento local; quando o projeto
+    amadurecer, a evolução do schema deve migrar para o Alembic.
     """
     try:
         Base.metadata.create_all(bind=engine)
         _migrar_colunas()
     except Exception as exc:  # pragma: no cover - depende do banco estar de pé
         logger.warning("Não foi possível criar as tabelas no startup: %s", exc)
+    yield
+
+
+app = FastAPI(
+    title=settings.app_name,
+    description="API do sistema de controle de vendas ControleVirtual.",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 # Libera o acesso do frontend (React) durante o desenvolvimento.
 app.add_middleware(

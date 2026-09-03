@@ -147,7 +147,39 @@ export type FormaPagamento =
   | "cartao_credito"
   | "cartao_debito"
   | "pix"
+  | "fiado"
   | "outro";
+
+// Formas aceitas ao receber (quitar) um fiado — sem "fiado".
+export type FormaRecebimento =
+  | "dinheiro"
+  | "cartao_credito"
+  | "cartao_debito"
+  | "pix"
+  | "outro";
+
+export interface Pagamento {
+  id: number;
+  venda_id: number;
+  valor: string;
+  forma_pagamento?: string | null;
+  observacao?: string | null;
+  criado_em: string;
+}
+
+export interface PagamentoCreate {
+  valor: number;
+  forma_pagamento: FormaRecebimento;
+  observacao?: string | null;
+}
+
+export interface ContaReceber {
+  cliente_id: number | null;
+  cliente_nome: string;
+  num_vendas: number;
+  total_devido: string;
+  venda_mais_antiga: string;
+}
 
 export interface ItemVenda {
   id: number;
@@ -222,6 +254,12 @@ export interface Venda {
   motivo_cancelamento?: string | null;
   itens: ItemVenda[];
   devolucoes: Devolucao[];
+  pagamentos: Pagamento[];
+  // Campos computados pelo backend (fiado):
+  a_prazo: boolean;
+  total_pago: string;
+  saldo_devedor: string;
+  quitada: boolean;
 }
 
 export interface VendaCreate {
@@ -265,6 +303,9 @@ export interface CompraResumo {
   num_itens: number;
   estornada: boolean;
   tem_devolucao: boolean;
+  a_prazo: boolean;
+  total_pago: string;
+  saldo_devedor: string;
 }
 
 export interface FichaCliente {
@@ -275,6 +316,7 @@ export interface FichaCliente {
   total_itens: number;
   primeira_compra: string | null;
   ultima_compra: string | null;
+  saldo_devedor: string;
   favoritos: ProdutoFavorito[];
   compras: CompraResumo[];
 }

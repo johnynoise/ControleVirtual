@@ -11,6 +11,17 @@ class FormaPagamento(str, Enum):
     cartao_credito = "cartao_credito"
     cartao_debito = "cartao_debito"
     pix = "pix"
+    fiado = "fiado"
+    outro = "outro"
+
+
+class FormaPagamentoRecebimento(str, Enum):
+    """Formas aceitas ao receber (quitar) uma venda a prazo — sem "fiado"."""
+
+    dinheiro = "dinheiro"
+    cartao_credito = "cartao_credito"
+    cartao_debito = "cartao_debito"
+    pix = "pix"
     outro = "outro"
 
 
@@ -104,6 +115,36 @@ class DevolucaoOut(BaseModel):
     itens: list[ItemDevolucaoOut] = Field(default_factory=list)
 
 
+# --------------------------------------------------------------------------- #
+# Pagamentos (quitações de vendas a prazo / fiado)
+# --------------------------------------------------------------------------- #
+class PagamentoCreate(BaseModel):
+    valor: Decimal = Field(..., gt=0)
+    forma_pagamento: FormaPagamentoRecebimento = FormaPagamentoRecebimento.dinheiro
+    observacao: str | None = Field(default=None, max_length=300)
+
+
+class PagamentoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    venda_id: int
+    valor: Decimal
+    forma_pagamento: str | None
+    observacao: str | None
+    criado_em: datetime
+
+
+class ContaReceberLinha(BaseModel):
+    """Saldo devedor em aberto de um cliente (agregado das vendas a prazo)."""
+
+    cliente_id: int | None
+    cliente_nome: str
+    num_vendas: int
+    total_devido: Decimal
+    venda_mais_antiga: datetime
+
+
 class VendaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -122,6 +163,7 @@ class VendaOut(BaseModel):
     motivo_cancelamento: str | None = None
     itens: list[ItemVendaOut] = Field(default_factory=list)
     devolucoes: list["DevolucaoOut"] = Field(default_factory=list)
+    pagamentos: list["PagamentoOut"] = Field(default_factory=list)
 
     @computed_field
     @property
@@ -130,3 +172,36 @@ class VendaOut(BaseModel):
         if self.total_liquido <= 0:
             return Decimal("0")
         return (self.lucro / self.total_liquido * 100).quantize(Decimal("0.01"))
+
+    @computed_field
+    @property
+    def a_prazo(self) -> bool:
+        """Indica se a venda foi feita no fiado (a prazo)."""
+        return self.forma_pagamento == FormaPagamento.fiado.value
+
+    @computed_field
+    @property
+    def total_pago(self) -> Decimal:
+        """Soma dos pagamentos (quitações) registrados para esta venda."""
+        return sum((p.valor for p in self.pagamentos), Decimal("0")).quantize(
+            Decimal("0.01")
+        )
+
+    @computed_field
+    @property
+    def saldo_devedor(self) -> Decimal:
+        """Quanto ainda falta receber. Zero quando a venda não é a prazo.
+
+        Vendas estornadas não têm saldo em aberto. Nunca fica negativo (se o
+        cliente pagou mais do que o total após uma devolução, o saldo é zero).
+        """
+        if not self.a_prazo or self.cancelada_em is not None:
+            return Decimal("0.00")
+        saldo = Decimal(self.total_liquido) - self.total_pago
+        return saldo.quantize(Decimal("0.01")) if saldo > 0 else Decimal("0.00")
+
+    @computed_field
+    @property
+    def quitada(self) -> bool:
+        """Verdadeiro quando a venda a prazo já foi totalmente paga."""
+        return self.a_prazo and self.saldo_devedor <= 0

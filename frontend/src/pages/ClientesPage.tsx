@@ -8,6 +8,10 @@ import {
   removerCliente,
 } from "../services/clientes";
 import { corAvatar, extrairErro, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
+import Paginacao from "../components/Paginacao";
+import { useConfirm, useToast } from "../components/Feedback";
+
+const POR_PAGINA = 10;
 
 function formVazio(): ClienteCreate {
   return { nome: "", telefone: "", email: "", ativo: true };
@@ -16,6 +20,8 @@ function formVazio(): ClienteCreate {
 type FiltroStatus = "todos" | "ativos" | "inativos";
 
 export default function ClientesPage() {
+  const toast = useToast();
+  const confirmar = useConfirm();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -29,6 +35,7 @@ export default function ClientesPage() {
   // Busca e filtro.
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<FiltroStatus>("todos");
+  const [pagina, setPagina] = useState(1);
 
   async function carregar() {
     setCarregando(true);
@@ -59,6 +66,21 @@ export default function ClientesPage() {
       );
     });
   }, [clientes, busca, filtro]);
+
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(clientesFiltrados.length / POR_PAGINA)
+  );
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const clientesVisiveis = clientesFiltrados.slice(
+    (paginaAtual - 1) * POR_PAGINA,
+    paginaAtual * POR_PAGINA
+  );
+
+  // Ao mudar filtro/busca, volta para a primeira página.
+  useEffect(() => {
+    setPagina(1);
+  }, [busca, filtro]);
 
   function abrirNovo() {
     setEditandoId(null);
@@ -102,6 +124,7 @@ export default function ClientesPage() {
     };
 
     try {
+      const edicao = editandoId !== null;
       if (editandoId === null) {
         await criarCliente(payload);
       } else {
@@ -109,6 +132,7 @@ export default function ClientesPage() {
       }
       fecharModal();
       await carregar();
+      toast.sucesso(edicao ? "Cliente salvo." : "Cliente criado.");
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -117,13 +141,22 @@ export default function ClientesPage() {
   }
 
   async function excluir(c: Cliente) {
-    if (!confirm(`Remover o cliente "${c.nome}"?`)) return;
+    const ok = await confirmar({
+      titulo: "Remover cliente",
+      mensagem: `Tem certeza que deseja remover "${c.nome}"?`,
+      confirmar: "Remover",
+      perigo: true,
+    });
+    if (!ok) return;
     setErro(null);
     try {
       await removerCliente(c.id);
       await carregar();
+      toast.sucesso("Cliente removido.");
     } catch (err) {
-      setErro(extrairErro(err));
+      const msg = extrairErro(err);
+      setErro(msg);
+      toast.erro(msg);
     }
   }
 
@@ -203,7 +236,7 @@ export default function ClientesPage() {
               </tr>
             </thead>
             <tbody>
-              {clientesFiltrados.map((c) => {
+              {clientesVisiveis.map((c) => {
                 const wpp = linkWhatsapp(c.telefone);
                 return (
                   <tr key={c.id} className={c.ativo ? "" : "inativo"}>
@@ -262,6 +295,14 @@ export default function ClientesPage() {
               })}
             </tbody>
           </table>
+        )}
+
+        {!carregando && clientesFiltrados.length > 0 && (
+          <Paginacao
+            pagina={paginaAtual}
+            totalPaginas={totalPaginas}
+            onChange={setPagina}
+          />
         )}
       </div>
 

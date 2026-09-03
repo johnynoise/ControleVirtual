@@ -8,6 +8,7 @@ const PAGAMENTO_LABEL: Record<string, string> = {
   pix: "PIX",
   cartao_credito: "Cartão de crédito",
   cartao_debito: "Cartão de débito",
+  fiado: "Fiado (a prazo)",
   outro: "Outro",
 };
 
@@ -71,6 +72,20 @@ export default function Recibo({ venda }: { venda: Venda }) {
           <span>Pagamento</span>
           <span>{venda.forma_pagamento ? PAGAMENTO_LABEL[venda.forma_pagamento] ?? venda.forma_pagamento : "—"}</span>
         </div>
+        {venda.a_prazo && !venda.cancelada_em && (
+          <>
+            {parseFloat(venda.total_pago) > 0 && (
+              <div>
+                <span>Já pago</span>
+                <span>{brl(venda.total_pago)}</span>
+              </div>
+            )}
+            <div className="saldo">
+              <span>{venda.quitada ? "Quitado" : "Saldo devedor"}</span>
+              <span>{venda.quitada ? "✓" : brl(venda.saldo_devedor)}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="recibo-linha" />

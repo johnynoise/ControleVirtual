@@ -11,8 +11,10 @@ from app.crud import venda as crud_venda
 from app.crud.venda import ErroVenda
 from app.database import get_db
 from app.schemas.venda import (
+    ContaReceberLinha,
     DevolucaoRequest,
     EstornoRequest,
+    PagamentoCreate,
     VendaCreate,
     VendaOut,
 )
@@ -23,6 +25,12 @@ router = APIRouter(prefix="/vendas", tags=["Vendas"])
 @router.get("", response_model=list[VendaOut])
 def listar_vendas(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud_venda.listar(db, skip=skip, limit=limit)
+
+
+@router.get("/contas-a-receber", response_model=list[ContaReceberLinha])
+def listar_contas_a_receber(db: Session = Depends(get_db)):
+    """Saldo devedor em aberto por cliente (vendas a prazo/fiado)."""
+    return crud_venda.contas_a_receber(db)
 
 
 @router.get("/{venda_id}", response_model=VendaOut)
@@ -66,6 +74,22 @@ def devolver_venda(
     """Devolve itens de uma venda (parcial ou total), ajustando estoque e totais."""
     try:
         venda = crud_venda.devolver(db, venda_id, dados)
+    except ErroVenda as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if venda is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Venda não encontrada.")
+    return venda
+
+
+@router.post("/{venda_id}/pagamentos", response_model=VendaOut, status_code=status.HTTP_201_CREATED)
+def registrar_pagamento(
+    venda_id: int,
+    dados: PagamentoCreate,
+    db: Session = Depends(get_db),
+):
+    """Registra o recebimento (quitação parcial ou total) de uma venda a prazo."""
+    try:
+        venda = crud_venda.registrar_pagamento(db, venda_id, dados)
     except ErroVenda as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     if venda is None:

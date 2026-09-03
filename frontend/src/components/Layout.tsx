@@ -63,15 +63,36 @@ const icones: Record<string, ReactNode> = {
       <path d="M7 15l4-4 3 3 5-6" />
     </svg>
   ),
+  historico: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v5h5" />
+      <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+      <path d="M12 7v5l4 2" />
+    </svg>
+  ),
+  fiado: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M2 10h20" />
+      <path d="M6 15h4" />
+    </svg>
+  ),
 };
 
-const LINKS: { to: string; rotulo: string; icone: keyof typeof icones }[] = [
+const LINKS: {
+  to: string;
+  rotulo: string;
+  icone: keyof typeof icones;
+  end?: boolean;
+}[] = [
   { to: "/dashboard", rotulo: "Início", icone: "dashboard" },
-  { to: "/vendas", rotulo: "Vender", icone: "vendas" },
+  { to: "/vendas", rotulo: "Vender", icone: "vendas", end: true },
+  { to: "/vendas/historico", rotulo: "Histórico", icone: "historico" },
   { to: "/produtos", rotulo: "Produtos", icone: "produtos" },
   { to: "/movimentacoes", rotulo: "Estoque", icone: "movimentacoes" },
   { to: "/fornecedores", rotulo: "Fornecedores", icone: "fornecedores" },
   { to: "/clientes", rotulo: "Clientes", icone: "clientes" },
+  { to: "/contas-a-receber", rotulo: "Fiado", icone: "fiado" },
   { to: "/categorias", rotulo: "Categorias", icone: "categorias" },
   { to: "/relatorios", rotulo: "Relatórios", icone: "relatorios" },
 ];
@@ -101,7 +122,7 @@ export default function Layout() {
 
         <nav className="sidebar-nav">
           {LINKS.map((l) => (
-            <NavLink key={l.to} to={l.to} title={l.rotulo}>
+            <NavLink key={l.to} to={l.to} title={l.rotulo} end={l.end}>
               {icones[l.icone]}
               <span>{l.rotulo}</span>
             </NavLink>

@@ -13,9 +13,15 @@ from sqlalchemy.orm import Session
 from app.models.cliente import Cliente
 from app.models.devolucao import Devolucao, ItemDevolucao
 from app.models.movimentacao import MovimentacaoEstoque
+from app.models.pagamento import PagamentoVenda
 from app.models.produto import Produto
 from app.models.venda import ItemVenda, Venda
-from app.schemas.venda import DevolucaoRequest, VendaCreate
+from app.schemas.venda import (
+    DevolucaoRequest,
+    FormaPagamento,
+    PagamentoCreate,
+    VendaCreate,
+)
 
 
 class ErroVenda(ValueError):
@@ -46,6 +52,12 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
             raise ErroVenda("Cliente informado não existe.")
         cliente_id = cliente.id
         cliente_nome = cliente.nome
+
+    # Venda a prazo (fiado) precisa de um cliente identificado para que o saldo
+    # devedor tenha a quem ser cobrado.
+    eh_fiado = dados.forma_pagamento == FormaPagamento.fiado
+    if eh_fiado and cliente_id is None:
+        raise ErroVenda("Venda a prazo (fiado) exige um cliente identificado.")
 
     venda = Venda(
         cliente_id=cliente_id,
@@ -270,3 +282,110 @@ def devolver(db: Session, venda_id: int, dados: DevolucaoRequest) -> Venda | Non
     db.commit()
     db.refresh(venda)
     return venda
+
+
+# --------------------------------------------------------------------------- #
+# Fiado (venda a prazo) — pagamentos e saldo devedor
+# --------------------------------------------------------------------------- #
+_CENTAVOS = Decimal("0.01")
+
+
+def _total_pago(venda: Venda) -> Decimal:
+    """Soma dos pagamentos (quitações) já registrados para a venda."""
+    return sum((Decimal(p.valor) for p in venda.pagamentos), Decimal("0")).quantize(
+        _CENTAVOS
+    )
+
+
+def _saldo_devedor(venda: Venda) -> Decimal:
+    """Saldo em aberto da venda a prazo. Zero se não for fiado ou já estornada."""
+    if venda.forma_pagamento != FormaPagamento.fiado.value:
+        return Decimal("0.00")
+    if venda.cancelada_em is not None:
+        return Decimal("0.00")
+    saldo = (Decimal(venda.total_liquido or 0) - _total_pago(venda)).quantize(_CENTAVOS)
+    return saldo if saldo > 0 else Decimal("0.00")
+
+
+def registrar_pagamento(
+    db: Session, venda_id: int, dados: PagamentoCreate
+) -> Venda | None:
+    """Registra um pagamento (quitação parcial ou total) de uma venda a prazo.
+
+    Valida que a venda é fiado, não está estornada e que o valor não excede o
+    saldo devedor atual. O pagamento fica registrado no histórico da venda.
+    """
+    venda = db.get(Venda, venda_id)
+    if venda is None:
+        return None
+    if venda.forma_pagamento != FormaPagamento.fiado.value:
+        raise ErroVenda("Esta venda não é a prazo; não há saldo a receber.")
+    if venda.cancelada_em is not None:
+        raise ErroVenda("Esta venda foi estornada; não há saldo a receber.")
+
+    saldo = _saldo_devedor(venda)
+    if saldo <= 0:
+        raise ErroVenda("Esta venda já está quitada.")
+
+    valor = Decimal(dados.valor).quantize(_CENTAVOS)
+    if valor > saldo:
+        raise ErroVenda(
+            f"Valor acima do saldo devedor. Falta receber {saldo}."
+        )
+
+    venda.pagamentos.append(
+        PagamentoVenda(
+            valor=valor,
+            forma_pagamento=dados.forma_pagamento.value,
+            observacao=(dados.observacao or "").strip() or None,
+        )
+    )
+
+    db.add(venda)
+    db.commit()
+    db.refresh(venda)
+    return venda
+
+
+def contas_a_receber(db: Session) -> list[dict]:
+    """Agrupa o saldo devedor em aberto por cliente (vendas a prazo).
+
+    Considera apenas vendas fiado não estornadas com saldo maior que zero.
+    Retorna, por cliente, o total devido, o número de vendas em aberto e a
+    data da venda em aberto mais antiga (para priorizar a cobrança).
+    """
+    vendas = (
+        db.query(Venda)
+        .filter(
+            Venda.forma_pagamento == FormaPagamento.fiado.value,
+            Venda.cancelada_em.is_(None),
+        )
+        .order_by(Venda.criado_em.asc())
+        .all()
+    )
+
+    agrupado: dict[int | None, dict] = {}
+    for venda in vendas:
+        saldo = _saldo_devedor(venda)
+        if saldo <= 0:
+            continue
+        chave = venda.cliente_id
+        linha = agrupado.get(chave)
+        if linha is None:
+            linha = {
+                "cliente_id": venda.cliente_id,
+                "cliente_nome": venda.cliente_nome or "Sem cliente",
+                "num_vendas": 0,
+                "total_devido": Decimal("0.00"),
+                "venda_mais_antiga": venda.criado_em,
+            }
+            agrupado[chave] = linha
+        linha["num_vendas"] += 1
+        linha["total_devido"] = (linha["total_devido"] + saldo).quantize(_CENTAVOS)
+        if venda.criado_em < linha["venda_mais_antiga"]:
+            linha["venda_mais_antiga"] = venda.criado_em
+
+    # Maiores devedores primeiro.
+    return sorted(
+        agrupado.values(), key=lambda l: l["total_devido"], reverse=True
+    )

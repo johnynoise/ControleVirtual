@@ -4,6 +4,8 @@ import type { Movimentacao, MovimentacaoCreate, TipoMovimentacao } from "../type
 export async function listarMovimentacoes(params?: {
   produto_id?: number;
   tipo?: TipoMovimentacao;
+  skip?: number;
+  limit?: number;
 }): Promise<Movimentacao[]> {
   const { data } = await api.get<Movimentacao[]>("/movimentacoes", { params });
   return data;
