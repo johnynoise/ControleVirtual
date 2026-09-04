@@ -33,7 +33,8 @@ from app.models.cliente import Cliente
 from app.models.devolucao import Devolucao, ItemDevolucao
 from app.models.fornecedor import Fornecedor
 from app.models.movimentacao import MovimentacaoEstoque
-from app.models.produto import Produto
+from app.models.pagamento import PagamentoVenda
+from app.models.produto import Produto, VariacaoProduto
 from app.models.venda import ItemVenda, Venda
 
 CENTAVOS = Decimal("0.01")
@@ -164,7 +165,17 @@ NOMES = [
 ]
 
 FORMAS_PAGAMENTO = ["dinheiro", "pix", "cartao_credito", "cartao_debito", "pix", "cartao_credito"]
+# Formas aceitas ao receber (quitar) uma venda fiado — sem "fiado".
+FORMAS_RECEBIMENTO = ["dinheiro", "pix", "pix", "cartao_credito", "cartao_debito"]
 MOTIVOS_DEVOLUCAO = ["defeito", "nao_gostou", "tamanho_errado", "produto_errado", "arrependimento"]
+
+# Produtos que ganham "grade" (variações) para demonstrar essa tela.
+# nome do produto -> (chave do atributo, lista de valores).
+GRADE_VARIACOES = {
+    "Camiseta Polo": ("tamanho", ["P", "M", "G", "GG"]),
+    "Tênis Runner": ("numero", ["38", "39", "40", "41", "42"]),
+    "Sandália Feminina": ("numero", ["35", "36", "37", "38"]),
+}
 
 
 def _telefone_fake(rnd: random.Random) -> str:
@@ -179,8 +190,9 @@ def _email_fake(nome: str) -> str:
 
 def limpar_dados(db) -> None:
     """Apaga todos os registros na ordem correta de dependência."""
-    for modelo in (ItemDevolucao, Devolucao, ItemVenda, Venda, MovimentacaoEstoque,
-                   Produto, Categoria, Cliente, Fornecedor):
+    for modelo in (ItemDevolucao, Devolucao, PagamentoVenda, ItemVenda, Venda,
+                   MovimentacaoEstoque, VariacaoProduto, Produto, Categoria,
+                   Cliente, Fornecedor):
         db.execute(delete(modelo))
     db.commit()
 
@@ -189,7 +201,8 @@ def _has_dados(db) -> bool:
     return db.query(Venda).first() is not None or db.query(Produto).first() is not None
 
 
-def seed(meses: int, reset: bool, seed_aleatorio: int = 42) -> None:
+def seed(meses: int, reset: bool, seed_aleatorio: int = 42,
+         email_demo: str | None = None) -> None:
     rnd = random.Random(seed_aleatorio)
 
     Base.metadata.create_all(bind=engine)
@@ -261,6 +274,13 @@ def seed(meses: int, reset: bool, seed_aleatorio: int = 42) -> None:
             clientes.append(cliente)
         db.flush()
 
+        # Se um email de demonstração foi informado, atribui-o ao primeiro
+        # cliente (ativo), para testar o envio de recibo por email pela tela.
+        if email_demo:
+            clientes[0].email = email_demo
+            clientes[0].ativo = True
+            print(f"E-mail de demonstração atribuído a: {clientes[0].nome} <{email_demo}>")
+
         # ---------------- Produtos + estoque inicial ----------------
         produtos: list[Produto] = []
         # estado[produto.id] = {"estoque": int, "custo": Decimal, "min": int}
@@ -307,11 +327,39 @@ def seed(meses: int, reset: bool, seed_aleatorio: int = 42) -> None:
             estado[produto.id] = {"estoque": qtd_inicial, "custo": custo_dec, "min": est_min}
         db.flush()
 
+        # ---------------- Variações (grade) de alguns produtos ----------------
+        # Demonstra a tela de grade: mesmo produto em vários tamanhos/números,
+        # cada um com estoque próprio. Não entram no fluxo de venda (o PDV usa
+        # o produto), servem para visualizar o cadastro de variações.
+        prod_por_nome = {p.nome: p for p in produtos}
+        num_variacoes = 0
+        var_sku = 5000
+        for nome_prod, (chave, valores) in GRADE_VARIACOES.items():
+            prod = prod_por_nome.get(nome_prod)
+            if prod is None:
+                continue
+            for valor in valores:
+                var_sku += 1
+                atributos = dict(prod.atributos)
+                atributos[chave] = valor
+                db.add(VariacaoProduto(
+                    produto_id=prod.id,
+                    sku=f"VAR{var_sku}",
+                    atributos=atributos,
+                    preco_venda=None,  # herda o preço do produto
+                    estoque=rnd.randint(2, 15),
+                    criado_em=inicio_dt,
+                    atualizado_em=inicio_dt,
+                ))
+                num_variacoes += 1
+        db.flush()
+
         # ---------------- Vendas ao longo do período ----------------
         num_vendas = 0
         num_itens = 0
         num_reposicoes = 0
         vendas_criadas: list[Venda] = []
+        vendas_fiado: list[Venda] = []
 
         dia = inicio
         total_dias = (hoje - inicio).days
@@ -338,15 +386,18 @@ def seed(meses: int, reset: bool, seed_aleatorio: int = 42) -> None:
                 qtd_produtos = rnd.choices([1, 2, 3, 4], weights=[45, 30, 18, 7])[0]
                 escolhidos = rnd.sample(produtos, k=min(qtd_produtos, len(produtos)))
 
-                venda = Venda(
-                    forma_pagamento=rnd.choice(FORMAS_PAGAMENTO),
-                    criado_em=momento,
-                )
+                venda = Venda(criado_em=momento)
                 # ~70% das vendas têm cliente identificado.
-                if rnd.random() < 0.70:
+                tem_cliente = rnd.random() < 0.70
+                if tem_cliente:
                     cliente = rnd.choice(clientes)
                     venda.cliente_id = cliente.id
                     venda.cliente_nome = cliente.nome
+
+                # ~14% das vendas com cliente são fiado (a prazo). Sem cliente
+                # não faz sentido vender fiado (não há para quem cobrar).
+                eh_fiado = tem_cliente and rnd.random() < 0.14
+                venda.forma_pagamento = "fiado" if eh_fiado else rnd.choice(FORMAS_PAGAMENTO)
 
                 total_bruto = Decimal("0")
                 custo_total = Decimal("0")
@@ -424,6 +475,8 @@ def seed(meses: int, reset: bool, seed_aleatorio: int = 42) -> None:
 
                 db.add(venda)
                 vendas_criadas.append(venda)
+                if eh_fiado:
+                    vendas_fiado.append(venda)
                 num_vendas += 1
 
             dia += timedelta(days=1)
@@ -434,12 +487,77 @@ def seed(meses: int, reset: bool, seed_aleatorio: int = 42) -> None:
 
         db.flush()
 
+        # ---------------- Pagamentos das vendas fiado (quitações) ----------------
+        # Distribui as vendas a prazo em três situações, para popular a página
+        # de Contas a Receber e o histórico de recebimentos:
+        #   ~35% totalmente em aberto (nenhum pagamento)
+        #   ~30% com pagamento parcial (ainda há saldo devedor)
+        #   ~35% quitadas (uma ou mais parcelas somando o total)
+        limite_pagto = datetime.combine(hoje, time(18, 0))
+        num_pagamentos = 0
+        fiado_aberto = fiado_parcial = fiado_quitado = 0
+
+        def _data_pagto(venda: Venda, dias: int) -> datetime:
+            dt = venda.criado_em + timedelta(days=dias, hours=rnd.randint(0, 8))
+            return dt if dt <= limite_pagto else limite_pagto
+
+        for venda in vendas_fiado:
+            total = Decimal(venda.total_liquido)
+            if total <= 0:
+                continue
+            r = rnd.random()
+            if r < 0.35:
+                fiado_aberto += 1
+                continue
+            if r < 0.65:
+                # Pagamento parcial (30% a 60% do total).
+                pct = rnd.choice([Decimal("0.30"), Decimal("0.50"), Decimal("0.60")])
+                valor = dinheiro(total * pct)
+                if valor >= total:
+                    valor = dinheiro(total / 2)
+                db.add(PagamentoVenda(
+                    venda_id=venda.id,
+                    valor=valor,
+                    forma_pagamento=rnd.choice(FORMAS_RECEBIMENTO),
+                    observacao="Pagamento parcial",
+                    criado_em=_data_pagto(venda, rnd.randint(3, 30)),
+                ))
+                num_pagamentos += 1
+                fiado_parcial += 1
+            else:
+                # Quitada: 1 a 3 parcelas somando exatamente o total.
+                n = rnd.choice([1, 1, 2, 3])
+                restante = total
+                for k in range(n):
+                    if k == n - 1:
+                        valor = dinheiro(restante)
+                    else:
+                        frac = rnd.choice([Decimal("0.30"), Decimal("0.40"), Decimal("0.50")])
+                        valor = dinheiro(total * frac)
+                        if valor >= restante:
+                            valor = dinheiro(restante / 2)
+                    restante = dinheiro(restante - valor)
+                    db.add(PagamentoVenda(
+                        venda_id=venda.id,
+                        valor=valor,
+                        forma_pagamento=rnd.choice(FORMAS_RECEBIMENTO),
+                        observacao="Quitação" if n == 1 else f"Parcela {k + 1}/{n}",
+                        criado_em=_data_pagto(venda, 2 + k * rnd.randint(7, 20)),
+                    ))
+                    num_pagamentos += 1
+                    if restante <= 0:
+                        break
+                fiado_quitado += 1
+
+        db.flush()
+
         # ---------------- Devoluções e estornos ----------------
         num_devolucoes = 0
         num_estornos = 0
         # Considera apenas vendas com mais de 7 dias (tempo para devolver).
         elegiveis = [v for v in vendas_criadas
-                     if (hoje - v.criado_em.date()).days > 2 and v.itens]
+                     if (hoje - v.criado_em.date()).days > 2 and v.itens
+                     and v.forma_pagamento != "fiado"]
 
         for venda in elegiveis:
             r = rnd.random()
@@ -563,7 +681,11 @@ def seed(meses: int, reset: bool, seed_aleatorio: int = 42) -> None:
         print(f"Fornecedores:   {len(FORNECEDORES)}")
         print(f"Clientes:       {len(NOMES)}")
         print(f"Produtos:       {len(PRODUTOS)}")
+        print(f"Variações:      {num_variacoes} (grade de {len(GRADE_VARIACOES)} produtos)")
         print(f"Vendas:         {num_vendas} ({num_itens} itens)")
+        print(f"  fiado:        {len(vendas_fiado)} "
+              f"(em aberto: {fiado_aberto}, parciais: {fiado_parcial}, quitadas: {fiado_quitado})")
+        print(f"Pagamentos:     {num_pagamentos} (quitações de fiado)")
         print(f"Reposições:     {num_reposicoes}")
         print(f"Devoluções:     {num_devolucoes}")
         print(f"Estornos:       {num_estornos}")
@@ -600,8 +722,12 @@ def main() -> None:
                         help="Limpa os dados existentes antes de popular.")
     parser.add_argument("--seed", type=int, default=42,
                         help="Semente do gerador aleatório (padrão: 42).")
+    parser.add_argument("--email-demo", type=str, default=None,
+                        help="Atribui este email ao primeiro cliente, para testar "
+                             "o envio de recibo por email pela tela.")
     args = parser.parse_args()
-    seed(meses=args.meses, reset=args.reset, seed_aleatorio=args.seed)
+    seed(meses=args.meses, reset=args.reset, seed_aleatorio=args.seed,
+         email_demo=args.email_demo)
 
 
 if __name__ == "__main__":

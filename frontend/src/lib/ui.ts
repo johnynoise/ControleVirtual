@@ -27,6 +27,20 @@ export function iniciais(nome: string): string {
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
 }
 
+/**
+ * Aplica máscara de telefone brasileiro conforme o usuário digita.
+ * Ex.: "11987654321" → "(11) 98765-4321" · "1132654321" → "(11) 3265-4321".
+ * Ignora tudo que não for dígito e limita a 11 números.
+ */
+export function formatarTelefone(valor: string): string {
+  const d = valor.replace(/\D/g, "").slice(0, 11);
+  if (d.length === 0) return "";
+  if (d.length <= 2) return `(${d}`;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+
 /** Monta um link de WhatsApp a partir do telefone (formato brasileiro). */
 export function linkWhatsapp(telefone: string | null | undefined): string | null {
   if (!telefone) return null;
@@ -39,6 +53,22 @@ export function linkWhatsapp(telefone: string | null | undefined): string | null
 /** Ícone de WhatsApp (para reuso em ações de linha). */
 export const WHATSAPP_PATH =
   "M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm0 2a8 8 0 1 1-4.1 14.9l-.3-.2-2.8.8.8-2.7-.2-.3A8 8 0 0 1 12 4zm-2.5 3.4c-.2 0-.5 0-.7.3-.3.3-.9.9-.9 2.1s.9 2.4 1 2.6c.1.2 1.7 2.8 4.3 3.8 2.1.8 2.6.7 3 .6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2 0-.1-.2-.2-.5-.3l-1.6-.8c-.2-.1-.4-.1-.6.1l-.6.8c-.1.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.8-1.9c-.2-.5-.4-.4-.5-.5h-.5z";
+
+/**
+ * Converte texto digitado em número, aceitando o formato brasileiro.
+ * Ex.: "3,50" → 3.5 · "1.234,56" → 1234.56 · "3.50" → 3.5 · "" → 0.
+ * Quando há vírgula, o ponto é tratado como separador de milhar.
+ */
+export function parseNumero(valor: string | number | null | undefined): number {
+  if (typeof valor === "number") return Number.isNaN(valor) ? 0 : valor;
+  if (!valor) return 0;
+  const limpo = valor.trim().replace(/\s/g, "");
+  const normalizado = limpo.includes(",")
+    ? limpo.replace(/\./g, "").replace(",", ".")
+    : limpo;
+  const n = parseFloat(normalizado);
+  return Number.isNaN(n) ? 0 : n;
+}
 
 /** Formata um número (ou string numérica) como moeda em reais. */
 export function brl(valor: number | string | null | undefined): string {

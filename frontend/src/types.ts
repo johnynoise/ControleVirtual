@@ -1,5 +1,29 @@
 // Tipos que espelham os schemas do backend (FastAPI/Pydantic).
 
+export interface Configuracao {
+  id: number;
+  nome_loja: string;
+  cor: string;
+  logo?: string | null;
+  documento?: string | null;
+  telefone?: string | null;
+  endereco?: string | null;
+  email?: string | null;
+  recibo_rodape?: string | null;
+  atualizado_em: string;
+}
+
+export interface ConfiguracaoUpdate {
+  nome_loja?: string;
+  cor?: string;
+  logo?: string | null;
+  documento?: string | null;
+  telefone?: string | null;
+  endereco?: string | null;
+  email?: string | null;
+  recibo_rodape?: string | null;
+}
+
 export type TipoCampo = "texto" | "numero" | "lista" | "booleano" | "data";
 
 export interface CampoSchema {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { Categoria, Produto, ProdutoCreate } from "../types";
 import { listarCategorias } from "../services/categorias";
 import {
@@ -7,8 +8,13 @@ import {
   listarProdutos,
   removerProduto,
 } from "../services/produtos";
-import { extrairErro } from "../lib/ui";
+import { extrairErro, parseNumero } from "../lib/ui";
 import Paginacao from "../components/Paginacao";
+import EstadoVazio from "../components/EstadoVazio";
+import EstadoErro from "../components/EstadoErro";
+import ThOrdenavel from "../components/ThOrdenavel";
+import { ordenar, proximaOrdenacao, type EstadoOrdenacao } from "../lib/ordenacao";
+import { SkeletonTabela } from "../components/Skeleton";
 import { useConfirm, useToast } from "../components/Feedback";
 
 const POR_PAGINA = 10;
@@ -42,6 +48,15 @@ function formVazio(): FormState {
 }
 
 type FiltroStatus = "todos" | "ativos" | "inativos";
+type FiltroEstoque = "todos" | "baixo" | "esgotado" | "com";
+
+type CampoProduto =
+  | "nome"
+  | "categoria"
+  | "preco_custo"
+  | "preco_venda"
+  | "margem_percentual"
+  | "estoque_total";
 
 export default function ProdutosPage() {
   const toast = useToast();
@@ -56,10 +71,20 @@ export default function ProdutosPage() {
   const [form, setForm] = useState<FormState>(formVazio());
   const [salvando, setSalvando] = useState(false);
 
-  const [busca, setBusca] = useState("");
+  // Semeia a busca a partir do parâmetro de URL (?busca=), usado pela busca
+  // global para abrir a lista já filtrada em um produto.
+  const [searchParams] = useSearchParams();
+  const [busca, setBusca] = useState(() => searchParams.get("busca") ?? "");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
   const [filtroCategoria, setFiltroCategoria] = useState<number | "">("");
+  const [filtroEstoque, setFiltroEstoque] = useState<FiltroEstoque>("todos");
   const [pagina, setPagina] = useState(1);
+  const [ord, setOrd] = useState<EstadoOrdenacao<CampoProduto>>({
+    campo: "nome",
+    direcao: "asc",
+  });
+  const ordenarPor = (campo: CampoProduto) =>
+    setOrd((o) => proximaOrdenacao(o, campo));
 
   const categoriaSelecionada = useMemo(
     () => categorias.find((c) => c.id === form.categoria_id) ?? null,
@@ -68,8 +93,8 @@ export default function ProdutosPage() {
 
   // Prévia da margem calculada localmente (o backend também calcula).
   const margem = useMemo(() => {
-    const custo = parseFloat(form.preco_custo) || 0;
-    const venda = parseFloat(form.preco_venda) || 0;
+    const custo = parseNumero(form.preco_custo);
+    const venda = parseNumero(form.preco_venda);
     const lucro = venda - custo;
     const margemPct = venda > 0 ? (lucro / venda) * 100 : 0;
     const markupPct = custo > 0 ? (lucro / custo) * 100 : 0;
@@ -94,25 +119,56 @@ export default function ProdutosPage() {
     carregar();
   }, []);
 
+  // Reaplica a busca quando o parâmetro de URL muda (navegação já estando na
+  // página, ex.: busca global apontando para outro produto).
+  useEffect(() => {
+    const q = searchParams.get("busca");
+    if (q !== null) setBusca(q);
+  }, [searchParams]);
+
   const produtosFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     return produtos.filter((p) => {
       if (filtroStatus === "ativos" && !p.ativo) return false;
       if (filtroStatus === "inativos" && p.ativo) return false;
       if (filtroCategoria !== "" && p.categoria_id !== filtroCategoria) return false;
+      if (filtroEstoque === "baixo" && p.estoque_total > p.estoque_minimo) return false;
+      if (filtroEstoque === "esgotado" && p.estoque_total > 0) return false;
+      if (filtroEstoque === "com" && p.estoque_total <= 0) return false;
       if (!termo) return true;
       return [p.nome, p.sku, p.codigo_barras]
         .filter(Boolean)
         .some((campo) => (campo as string).toLowerCase().includes(termo));
     });
-  }, [produtos, busca, filtroStatus, filtroCategoria]);
+  }, [produtos, busca, filtroStatus, filtroCategoria, filtroEstoque]);
+
+  const produtosOrdenados = useMemo(
+    () =>
+      ordenar(produtosFiltrados, ord, (p, campo) => {
+        switch (campo) {
+          case "categoria":
+            return categorias.find((c) => c.id === p.categoria_id)?.nome ?? "";
+          case "preco_custo":
+            return parseNumero(p.preco_custo);
+          case "preco_venda":
+            return parseNumero(p.preco_venda);
+          case "margem_percentual":
+            return parseNumero(p.margem_percentual);
+          case "estoque_total":
+            return p.estoque_total;
+          default:
+            return p.nome;
+        }
+      }),
+    [produtosFiltrados, ord, categorias]
+  );
 
   const totalPaginas = Math.max(
     1,
-    Math.ceil(produtosFiltrados.length / POR_PAGINA)
+    Math.ceil(produtosOrdenados.length / POR_PAGINA)
   );
   const paginaAtual = Math.min(pagina, totalPaginas);
-  const produtosVisiveis = produtosFiltrados.slice(
+  const produtosVisiveis = produtosOrdenados.slice(
     (paginaAtual - 1) * POR_PAGINA,
     paginaAtual * POR_PAGINA
   );
@@ -120,7 +176,7 @@ export default function ProdutosPage() {
   // Ao mudar filtros/busca, volta para a primeira página.
   useEffect(() => {
     setPagina(1);
-  }, [busca, filtroStatus, filtroCategoria]);
+  }, [busca, filtroStatus, filtroCategoria, filtroEstoque]);
 
   function abrirNovo() {
     setEditandoId(null);
@@ -187,8 +243,8 @@ export default function ProdutosPage() {
       sku: form.sku.trim() || null,
       codigo_barras: form.codigo_barras.trim() || null,
       categoria_id: form.categoria_id,
-      preco_custo: parseFloat(form.preco_custo) || 0,
-      preco_venda: parseFloat(form.preco_venda) || 0,
+      preco_custo: parseNumero(form.preco_custo),
+      preco_venda: parseNumero(form.preco_venda),
       estoque: parseInt(form.estoque, 10) || 0,
       estoque_minimo: parseInt(form.estoque_minimo, 10) || 0,
       ativo: form.ativo,
@@ -260,7 +316,9 @@ export default function ProdutosPage() {
         </button>
       </div>
 
-      {erro && !modalAberto && <div className="alert erro">{erro}</div>}
+      {erro && !modalAberto && produtos.length > 0 && (
+        <div className="alert erro">{erro}</div>
+      )}
 
       {categorias.length === 0 && !carregando && (
         <div className="alert aviso">
@@ -301,6 +359,17 @@ export default function ProdutosPage() {
             </option>
           ))}
         </select>
+        <select
+          className="filtro-select"
+          value={filtroEstoque}
+          onChange={(e) => setFiltroEstoque(e.target.value as FiltroEstoque)}
+          title="Filtrar por estoque"
+        >
+          <option value="todos">Todo estoque</option>
+          <option value="baixo">Estoque baixo</option>
+          <option value="esgotado">Esgotados</option>
+          <option value="com">Com estoque</option>
+        </select>
         <div className="periodo-tabs">
           {filtros.map((f) => (
             <button
@@ -320,23 +389,46 @@ export default function ProdutosPage() {
 
       <div className="card">
         {carregando ? (
-          <p className="vazio">Carregando...</p>
+          <SkeletonTabela />
+        ) : erro && produtos.length === 0 ? (
+          <EstadoErro mensagem={erro} onTentarNovamente={carregar} />
         ) : produtos.length === 0 ? (
-          <p className="vazio">
-            Nenhum produto cadastrado. Clique em "+ Novo produto" para começar.
-          </p>
+          <EstadoVazio
+            titulo="Nenhum produto cadastrado"
+            descricao="Os produtos são a base para vender no PDV e controlar o estoque. Cadastre o primeiro para começar."
+            acao={
+              categorias.length === 0
+                ? { rotulo: "Criar categoria primeiro", to: "/categorias" }
+                : { rotulo: "Cadastrar primeiro produto", onClick: abrirNovo }
+            }
+          />
         ) : produtosFiltrados.length === 0 ? (
-          <p className="vazio">Nenhum produto encontrado para esse filtro.</p>
+          <EstadoVazio
+            titulo="Nenhum produto encontrado"
+            descricao="Tente outro termo de busca ou ajuste os filtros de categoria, estoque e status."
+          />
         ) : (
           <table className="tabela">
             <thead>
               <tr>
-                <th>Produto</th>
-                <th>Categoria</th>
-                <th className="num">Custo</th>
-                <th className="num">Venda</th>
-                <th className="num">Margem</th>
-                <th className="num">Estoque</th>
+                <ThOrdenavel campo="nome" estado={ord} onOrdenar={ordenarPor}>
+                  Produto
+                </ThOrdenavel>
+                <ThOrdenavel campo="categoria" estado={ord} onOrdenar={ordenarPor}>
+                  Categoria
+                </ThOrdenavel>
+                <ThOrdenavel campo="preco_custo" estado={ord} onOrdenar={ordenarPor} className="num">
+                  Custo
+                </ThOrdenavel>
+                <ThOrdenavel campo="preco_venda" estado={ord} onOrdenar={ordenarPor} className="num">
+                  Venda
+                </ThOrdenavel>
+                <ThOrdenavel campo="margem_percentual" estado={ord} onOrdenar={ordenarPor} className="num">
+                  Margem
+                </ThOrdenavel>
+                <ThOrdenavel campo="estoque_total" estado={ord} onOrdenar={ordenarPor} className="num">
+                  Estoque
+                </ThOrdenavel>
                 <th></th>
               </tr>
             </thead>
@@ -444,9 +536,8 @@ export default function ProdutosPage() {
               <label>
                 Preço de custo
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={form.preco_custo}
                   onChange={(e) => setCampo("preco_custo", e.target.value)}
                 />
@@ -454,9 +545,8 @@ export default function ProdutosPage() {
               <label>
                 Preço de venda
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={form.preco_venda}
                   onChange={(e) => setCampo("preco_venda", e.target.value)}
                 />

@@ -4,7 +4,12 @@ sqlalchemy==2.0.36
 alembic==1.14.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
+# Validação de endereços de email (usado por pydantic EmailStr).
+email-validator==2.2.0
 python-dotenv==1.0.1
+
+# Geração do PDF do recibo (puro Python, sem dependências de sistema).
+fpdf2==2.8.5
 
 # PostgreSQL (produção). No Python 3.14 o psycopg2-binary 2.9.10 ainda não tem
 # wheel pré-compilado e exige compilador/pg_config para build a partir do fonte.

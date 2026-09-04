@@ -52,3 +52,23 @@ export async function listarContasReceber(): Promise<ContaReceber[]> {
   const { data } = await api.get<ContaReceber[]>("/vendas/contas-a-receber");
   return data;
 }
+
+export interface EnviarReciboResposta {
+  enviado: boolean;
+  destinatario: string;
+}
+
+/**
+ * Envia o recibo da venda (PDF) por email. Se `email` for omitido, o backend
+ * usa o email cadastrado do cliente vinculado à venda.
+ */
+export async function enviarReciboEmail(
+  id: number,
+  email?: string
+): Promise<EnviarReciboResposta> {
+  const { data } = await api.post<EnviarReciboResposta>(
+    `/vendas/${id}/enviar-recibo`,
+    { email: email ?? null }
+  );
+  return data;
+}

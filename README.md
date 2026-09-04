@@ -3,22 +3,34 @@
 Sistema de controle de vendas e estoque para loja, feito para rodar localmente
 de forma simples e direta.
 
-**Stack:** FastAPI (backend) + React/Vite/TypeScript (frontend). Banco padrão
-**SQLite** (arquivo, sem servidor); PostgreSQL é opcional para produção.
+**Stack:** FastAPI (backend) + React/Vite/TypeScript (frontend), com gráficos em
+[Recharts](https://recharts.org/). Banco padrão **SQLite** (arquivo, sem
+servidor); PostgreSQL é opcional para produção.
 
 ## Funcionalidades
 
 - **PDV (vendas):** venda transacional que baixa o estoque, registra a
-  movimentação e calcula lucro numa única operação (com rollback em erro).
-- **Estorno e devolução:** cancelamento total ou devolução parcial de itens,
-  com retorno de estoque, recálculo de totais e histórico para auditoria.
+  movimentação e calcula o lucro numa única operação (com rollback em erro).
+  Suporta desconto, vínculo com cliente e várias formas de pagamento (dinheiro,
+  pix, cartão de crédito/débito e **fiado**).
+- **Estorno e devolução:** cancelamento total ou devolução parcial de itens
+  (com motivo), retornando o estoque, recalculando os totais da venda e
+  mantendo um histórico para auditoria.
+- **Contas a receber (fiado):** vendas a prazo nascem com saldo em aberto; os
+  pagamentos parciais ou totais do cliente são registrados e o saldo devedor é
+  atualizado automaticamente.
+- **Histórico de vendas:** listagem paginada das vendas realizadas, com recibo,
+  estorno/devolução e situação de pagamento.
 - **Produtos:** cadastro com variações e atributos por categoria, preço de
-  custo/venda, estoque e estoque mínimo.
-- **Estoque:** movimentações (kardex) de entrada/saída com motivo.
-- **Cadastros:** categorias, fornecedores e clientes (com ficha do cliente).
-- **Relatórios:** dashboard, curva ABC, giro e sem giro, ranking de clientes,
-  clientes inativos, forma de pagamento, compras por fornecedor, vendas por
-  dia/horário e por categoria, descontos e perdas.
+  custo/venda, estoque e estoque mínimo; margem calculada automaticamente.
+- **Estoque:** movimentações (kardex) de entrada, saída e ajuste com motivo.
+- **Cadastros:** categorias (com campos dinâmicos por categoria), fornecedores
+  e clientes — clientes têm **ficha** com histórico de compras, favoritos e
+  atalho de contato.
+- **Dashboard:** visão geral do período com indicadores e gráficos (Recharts).
+- **Relatórios:** curva ABC, giro e sem giro, ranking de clientes, clientes
+  inativos, forma de pagamento, compras por fornecedor, vendas por dia/horário
+  e por categoria, descontos e perdas.
 
 ## Estrutura do projeto
 
@@ -39,9 +51,10 @@ ControleVirtual/
 │
 └── frontend/             # React + Vite + TypeScript
     ├── src/
-    │   ├── components/   # componentes reutilizáveis
+    │   ├── components/   # componentes reutilizáveis (layout, gráficos, modais)
     │   ├── pages/        # telas (inclui pages/relatorios/)
     │   ├── services/     # cliente axios e chamadas por recurso
+    │   ├── lib/          # helpers de UI compartilhados
     │   ├── App.tsx       # rotas (lazy-loading por página)
     │   └── main.tsx
     ├── package.json
@@ -132,7 +145,15 @@ O frontend fica disponível em `http://localhost:5173` e já consulta a rota
 npm.cmd run build
 ```
 
-Os arquivos finais são gerados na pasta `frontend/dist/`.
+Os arquivos finais são gerados na pasta `frontend/dist/`. As páginas usam
+lazy-loading (um chunk por rota), então bibliotecas pesadas como o Recharts só
+são baixadas quando a tela que as usa é aberta.
+
+## Principais dependências
+
+- **Backend:** FastAPI, Uvicorn, SQLAlchemy, Pydantic / pydantic-settings.
+  (Alembic e psycopg2 já constam para o caminho PostgreSQL — veja abaixo.)
+- **Frontend:** React, React Router, Vite, TypeScript, Axios e Recharts.
 
 ## Banco de dados
 

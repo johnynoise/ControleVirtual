@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ContaReceber } from "../types";
 import { listarContasReceber } from "../services/vendas";
+import EstadoVazio from "../components/EstadoVazio";
+import EstadoErro from "../components/EstadoErro";
+import { SkeletonTabela } from "../components/Skeleton";
 import { brl, dataBR, extrairErro } from "../lib/ui";
 
 function diasDesde(iso: string | null | undefined): number | null {
@@ -60,7 +63,7 @@ export default function ContasReceberPage() {
         </div>
       </div>
 
-      {erro && <div className="alert erro">{erro}</div>}
+      {erro && contas.length > 0 && <div className="alert erro">{erro}</div>}
 
       <div className="kpis" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         <div className="kpi">
@@ -96,11 +99,20 @@ export default function ContasReceberPage() {
         </div>
 
         {carregando ? (
-          <p className="vazio">Carregando...</p>
+          <SkeletonTabela />
+        ) : erro && contas.length === 0 ? (
+          <EstadoErro mensagem={erro} onTentarNovamente={carregar} />
         ) : contas.length === 0 ? (
-          <p className="vazio">Nenhum saldo em aberto. Tudo em dia! 🎉</p>
+          <EstadoVazio
+            tom="sucesso"
+            titulo="Tudo em dia!"
+            descricao="Nenhum cliente com saldo em aberto. As vendas no fiado aparecem aqui até serem quitadas."
+          />
         ) : filtradas.length === 0 ? (
-          <p className="vazio">Nenhum cliente encontrado.</p>
+          <EstadoVazio
+            titulo="Nenhum cliente encontrado"
+            descricao="Tente outro termo de busca."
+          />
         ) : (
           <table className="tabela">
             <thead>

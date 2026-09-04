@@ -41,6 +41,10 @@
   --sombra: 0 1px 2px rgba(16, 24, 40, 0.04), 0 2px 6px rgba(16, 24, 40, 0.05);
   --sombra-md: 0 6px 24px rgba(16, 24, 40, 0.08);
 
+  /* Faixa clara que "varre" o skeleton (ajustada no tema escuro). */
+  --skeleton-brilho: #edf0f5;
+
+  color-scheme: light;
   color: var(--text);
 }
 
@@ -77,6 +81,8 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  /* Salvaguarda: em telas muito baixas a barra inteira pode rolar. */
+  overflow-y: auto;
 }
 
 .sidebar-brand {
@@ -93,11 +99,20 @@ body {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--azul), #5b8bff);
+  background: linear-gradient(135deg, var(--azul), color-mix(in srgb, var(--azul), white 28%));
   color: #fff;
   display: grid;
   place-items: center;
   font-size: 1.05rem;
+  flex-shrink: 0;
+}
+
+.sidebar-brand .brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: var(--surface-2);
   flex-shrink: 0;
 }
 
@@ -106,6 +121,10 @@ body {
   flex-direction: column;
   gap: 0.2rem;
   flex: 1;
+  /* min-height:0 permite o item flex encolher abaixo do conteúdo, para que a
+     navegação role internamente e o rodapé (Configurações) fique sempre visível. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar-nav a {
@@ -820,6 +839,41 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* ------------------------------------------------------------------ */
+/* KPIs reaproveitados dentro de modais                                */
+/* Os cards de KPI são dimensionados para páginas largas. Dentro de um */
+/* modal estreito o valor grande (1.7rem) e as colunas 1fr             */
+/* (= minmax(auto,1fr), que não encolhem abaixo do conteúdo) estouram  */
+/* a caixa. Aqui usamos uma versão compacta com minmax(0,1fr) para que */
+/* o conteúdo quebre em vez de vazar.                                  */
+.modal-box .kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.modal-box .kpi {
+  padding: 0.8rem 0.9rem;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.modal-box .kpi-label {
+  font-size: 0.75rem;
+}
+
+.modal-box .kpi-valor {
+  font-size: 1.2rem;
+  overflow-wrap: anywhere;
+}
+
+/* Em telas estreitas os KPIs do modal empilham em 2 colunas. */
+@media (max-width: 560px) {
+  .modal-box .kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .link-forte {
   font-weight: 700;
   color: var(--azul-escuro);
@@ -961,6 +1015,44 @@ body {
   gap: 0.5rem;
   justify-content: center;
   margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.recibo-envio {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.recibo-envio label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.recibo-envio-linha {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.recibo-envio-linha input {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.recibo-envio-linha input:focus {
+  outline: none;
+  border-color: var(--azul);
+}
+
+.recibo-envio-linha .btn {
+  white-space: nowrap;
 }
 
 .recibo {
@@ -2432,4 +2524,1158 @@ kbd {
 .fiado-antiga {
   font-size: 0.8rem;
   color: var(--muted, #6b7280);
+}
+
+/* ------------------------------------------------------------------ */
+/* PDV — Filtro por categoria e cálculo de troco                       */
+/* ------------------------------------------------------------------ */
+
+/* Abas de categoria acima da grade de produtos (rolagem horizontal). */
+.pdv-cats {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.85rem;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+
+.pdv-cat {
+  white-space: nowrap;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.pdv-cat:hover {
+  border-color: var(--azul);
+}
+
+.pdv-cat.ativo {
+  background: var(--azul-suave);
+  border-color: var(--azul);
+  color: var(--azul-escuro);
+}
+
+/* Bloco de troco (aparece no pagamento em dinheiro). */
+.pdv-troco {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pdv-troco-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.pdv-troco-chip {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.pdv-troco-chip:hover {
+  border-color: var(--azul);
+  background: var(--azul-suave);
+}
+
+.pdv-troco-input {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  color: var(--text);
+  -moz-appearance: textfield;
+}
+
+.pdv-troco-input::-webkit-outer-spin-button,
+.pdv-troco-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pdv-troco-input:focus {
+  outline: none;
+  border-color: var(--azul);
+  box-shadow: 0 0 0 3px var(--azul-suave);
+}
+
+.pdv-troco-linha {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.pdv-troco-linha strong {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdv-troco-linha.ok {
+  background: var(--verde-suave);
+  color: var(--verde);
+}
+
+.pdv-troco-linha.falta {
+  background: var(--ambar-suave);
+  color: var(--ambar);
+}
+
+/* Campo de desconto com alternância R$ / % (dentro dos totais do PDV). */
+.pdv-desc-campo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pdv-desc-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.pdv-desc-toggle button {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pdv-desc-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.pdv-desc-toggle button:hover:not(.ativo) {
+  background: var(--azul-suave);
+  color: var(--azul-escuro);
+}
+
+.pdv-desc-toggle button.ativo {
+  background: var(--azul);
+  color: #fff;
+}
+
+.pdv-desc-campo input {
+  width: 92px;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-family: inherit;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  color: var(--text);
+  -moz-appearance: textfield;
+}
+
+.pdv-desc-campo input::-webkit-outer-spin-button,
+.pdv-desc-campo input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pdv-desc-campo input:focus {
+  outline: none;
+  border-color: var(--azul);
+  box-shadow: 0 0 0 3px var(--azul-suave);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard — deltas de comparação e faixa de alertas                 */
+/* ------------------------------------------------------------------ */
+
+/* Variação (delta) de um KPI vs. período anterior. */
+.kpi-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-delta.sobe {
+  color: var(--verde);
+}
+
+.kpi-delta.cai {
+  color: var(--vermelho);
+}
+
+.kpi-delta.neutro {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* No KPI de lucro o delta fica ao lado da margem. */
+.kpi-sub .kpi-delta {
+  margin-left: 0.5rem;
+}
+
+.kpis-legenda {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: -0.75rem 0 1.75rem;
+}
+
+/* Faixa de alertas acionáveis (cards clicáveis). */
+.alertas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.75rem;
+}
+
+.alerta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--raio-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: var(--sombra);
+  transition: border-color 0.15s, transform 0.06s, box-shadow 0.15s;
+}
+
+.alerta-item:hover {
+  border-color: var(--azul);
+  transform: translateY(-1px);
+  box-shadow: var(--sombra-md);
+}
+
+.alerta-icone {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.alerta-icone svg {
+  width: 20px;
+  height: 20px;
+}
+
+.alerta-item.perigo .alerta-icone {
+  background: var(--vermelho-suave);
+  color: var(--vermelho);
+}
+
+.alerta-item.aviso .alerta-icone {
+  background: var(--ambar-suave);
+  color: var(--ambar);
+}
+
+.alerta-item.info .alerta-icone {
+  background: var(--azul-suave);
+  color: var(--azul-escuro);
+}
+
+.alerta-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.alerta-titulo {
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.alerta-sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.alerta-seta {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Busca global (paleta de comandos — Ctrl+K)                          */
+/* ------------------------------------------------------------------ */
+
+/* Botão de busca na barra lateral. */
+.sidebar-busca {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.sidebar-busca:hover {
+  border-color: var(--azul);
+  color: var(--text);
+}
+
+.sidebar-busca svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sidebar-busca-texto {
+  flex: 1;
+  text-align: left;
+}
+
+.sidebar-busca-kbd {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+}
+
+/* Overlay + paleta. */
+.busca-global-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 1rem 1rem;
+  z-index: 120;
+}
+
+.busca-global {
+  width: 100%;
+  max-width: 560px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+}
+
+.busca-global-campo {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.busca-global-campo svg {
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.busca-global-campo input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 1.05rem;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.busca-global-campo input:focus {
+  outline: none;
+}
+
+.busca-global-campo input::placeholder {
+  color: var(--text-muted);
+}
+
+.busca-global-lista {
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.busca-global-vazio {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2rem 1rem;
+  font-size: 0.92rem;
+}
+
+.busca-global-grupo {
+  margin-bottom: 0.35rem;
+}
+
+.busca-global-grupo-titulo {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 0.5rem 0.6rem 0.25rem;
+}
+
+.busca-global-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.6rem;
+  border: none;
+  border-radius: var(--raio-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.busca-global-item.ativo {
+  background: var(--azul-suave);
+}
+
+.bg-icone {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+.bg-icone svg {
+  width: 18px;
+  height: 18px;
+}
+
+.bg-pagina {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.bg-cliente {
+  background: var(--azul-suave);
+  color: var(--azul-escuro);
+}
+
+.bg-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.bg-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.bg-rotulo {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-enter {
+  font-size: 0.85rem;
+  color: var(--azul-escuro);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.05rem 0.4rem;
+  flex-shrink: 0;
+}
+
+/* No mobile a barra lateral vira horizontal: some o texto/atalho do botão. */
+@media (max-width: 900px) {
+  .sidebar-busca {
+    width: auto;
+    margin: 0;
+    padding: 0.55rem;
+  }
+
+  .sidebar-busca-texto,
+  .sidebar-busca-kbd {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Estado vazio educativo (componente EstadoVazio)                     */
+/* ------------------------------------------------------------------ */
+.estado-vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.6rem;
+  padding: 2.75rem 1.5rem;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.ev-icone {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--azul-suave);
+  color: var(--azul-escuro);
+  margin-bottom: 0.35rem;
+}
+
+.ev-icone svg {
+  width: 28px;
+  height: 28px;
+}
+
+.ev-icone.sucesso {
+  background: var(--verde-suave);
+  color: var(--verde);
+}
+
+.ev-titulo {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.ev-descricao {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.estado-vazio .btn {
+  margin-top: 0.65rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Navegação agrupada da barra lateral                                 */
+/* ------------------------------------------------------------------ */
+.nav-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.nav-grupo-titulo {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0.9rem 0.75rem 0.35rem;
+}
+
+/* "Vender" é a ação central do dia a dia: recebe destaque. */
+.sidebar-nav a.nav-vender {
+  background: var(--azul);
+  color: #fff;
+  font-weight: 700;
+  margin: 0.15rem 0 0.35rem;
+}
+
+.sidebar-nav a.nav-vender:hover,
+.sidebar-nav a.nav-vender.active {
+  background: var(--azul-escuro);
+  color: #fff;
+}
+
+/* No mobile a navegação vira uma faixa horizontal: some títulos de grupo. */
+@media (max-width: 900px) {
+  .nav-grupo {
+    flex-direction: row;
+    gap: 0.25rem;
+  }
+
+  .nav-grupo-titulo {
+    display: none;
+  }
+
+  .sidebar-nav a.nav-vender {
+    margin: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Skeleton (carregamento) e estado de erro                            */
+/* ------------------------------------------------------------------ */
+.skeleton {
+  display: block;
+  width: 100%;
+  height: 1rem;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--skeleton-brilho) 37%,
+    var(--surface-2) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+.skeleton-tabela {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+}
+
+.skeleton-row {
+  height: 2.6rem;
+  border-radius: 10px;
+}
+
+/* Estado de erro padronizado. */
+.estado-erro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.6rem;
+  padding: 2.75rem 1.5rem;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.ee-icone {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--vermelho-suave);
+  color: var(--vermelho);
+  margin-bottom: 0.35rem;
+}
+
+.ee-icone svg {
+  width: 28px;
+  height: 28px;
+}
+
+.ee-titulo {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.ee-msg {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.estado-erro .btn {
+  margin-top: 0.65rem;
+}
+
+/* ================================================================== */
+/* Tema escuro                                                         */
+/* Sobrescreve as variáveis do :root quando data-tema="escuro".        */
+/* ================================================================== */
+:root[data-tema="escuro"] {
+  color-scheme: dark;
+
+  --bg: #0f1420;
+  --surface: #161d2b;
+  --surface-2: #1f2836;
+  --text: #e6e9ef;
+  --text-muted: #9aa4b2;
+  --border: #2a3444;
+
+  --azul: #4b82ff;
+  --azul-escuro: #7aa2ff;
+  --azul-suave: #1b2740;
+
+  --verde: #34d17f;
+  --verde-suave: #14271d;
+  --vermelho: #ff6b74;
+  --vermelho-suave: #2c1820;
+  --ambar: #e6ad52;
+  --ambar-suave: #2a2114;
+
+  --cinza-borda: var(--border);
+  --cinza-fundo: var(--surface-2);
+
+  --skeleton-brilho: #2c3647;
+
+  --sombra: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --sombra-md: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* Rótulos de formulário (cor fixa no tema claro) ganham contraste. */
+:root[data-tema="escuro"] .form label,
+:root[data-tema="escuro"] .campo-row label,
+:root[data-tema="escuro"] .pdv-cliente label,
+:root[data-tema="escuro"] .pdv-label,
+:root[data-tema="escuro"] .rotulo-campo,
+:root[data-tema="escuro"] .filtros-linha label {
+  color: #c4ccd8;
+}
+
+/* Alertas: texto fixo escuro no tema claro precisa clarear no escuro. */
+:root[data-tema="escuro"] .alert.erro {
+  color: #ff9ba1;
+}
+
+:root[data-tema="escuro"] .alert.aviso {
+  color: var(--ambar);
+}
+
+/* ------------------------------------------------------------------ */
+/* Botão de alternância de tema (rodapé da barra lateral)              */
+/* ------------------------------------------------------------------ */
+.tema-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tema-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: #d3d9e2;
+}
+
+:root[data-tema="escuro"] .tema-toggle:hover {
+  border-color: var(--border);
+}
+
+.tema-toggle svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .tema-toggle {
+    width: auto;
+    margin: 0;
+    padding: 0.5rem;
+  }
+
+  .tema-toggle span {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Cabeçalho de tabela ordenável                                       */
+/* ------------------------------------------------------------------ */
+.th-ord {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.th-ord:hover {
+  color: var(--text);
+}
+
+.th-ord.ativo {
+  color: var(--azul-escuro);
+}
+
+.th-ord-conteudo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Em colunas numéricas (.num) o conteúdo alinha à direita. */
+.th-ord.num .th-ord-conteudo {
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.th-ord-seta {
+  font-size: 0.7rem;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+/* Seta "neutra" (coluna não ativa) fica mais discreta e aparece no hover. */
+.th-ord:not(.ativo) .th-ord-seta {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.th-ord:not(.ativo):hover .th-ord-seta {
+  opacity: 0.45;
+}
+
+/* Preço do item travado (só edita após desbloqueio explícito). */
+.pdv-item-preco-fixo {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pdv-item-editar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.pdv-item-editar:hover {
+  border-color: var(--azul);
+  color: var(--azul-escuro);
+}
+
+.pdv-item-editar.ativo {
+  background: var(--azul-suave);
+  border-color: var(--azul);
+  color: var(--azul-escuro);
+}
+
+.pdv-item-editar svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Seletor de filtro na barra de ferramentas das listas. */
+.filtro-select {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  font-family: inherit;
+  font-size: 1rem;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.filtro-select:focus {
+  outline: none;
+  border-color: var(--azul);
+  box-shadow: 0 0 0 3px var(--azul-suave);
+}
+
+/* ------------------------------------------------------------------ */
+/* Item do carrinho: layout em 3 linhas (menos apertado em telas menores) */
+/* ------------------------------------------------------------------ */
+.pdv-item-preco-linha {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.pdv-item-preco-un {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pdv-item-un {
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+/* Na nova linha de preço, o campo de edição ocupa o espaço disponível. */
+.pdv-item-preco-linha .pdv-item-preco {
+  flex: 1;
+}
+
+/* Em telas de pouca altura (notebooks menores), compacta o item para caber
+   mais linhas na área rolável do carrinho. */
+@media (max-height: 820px) {
+  .pdv-itens {
+    gap: 0.4rem;
+  }
+
+  .pdv-item {
+    padding: 0.5rem 0.6rem;
+  }
+
+  .pdv-item-topo {
+    margin-bottom: 0.35rem;
+  }
+
+  .pdv-item-preco-linha {
+    margin-bottom: 0.35rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Personalização — link de config na sidebar, logo no recibo e a tela */
+/* ------------------------------------------------------------------ */
+
+/* Link "Configurações" no rodapé da barra lateral. */
+.sidebar-config {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: var(--raio-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-config svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sidebar-config:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.sidebar-config.active {
+  background: var(--azul-suave);
+  color: var(--azul-escuro);
+  font-weight: 600;
+}
+
+/* Logo no topo do recibo. */
+.recibo-logo {
+  display: block;
+  max-width: 160px;
+  max-height: 60px;
+  margin: 0 auto 0.4rem;
+  object-fit: contain;
+}
+
+/* Tela de Configurações */
+.config-preview {
+  margin-bottom: 1.5rem;
+}
+
+.config-preview-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-md);
+  background: var(--surface-2);
+  margin-top: 0.4rem;
+}
+
+.config-preview-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.config-preview-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.config-preview-nome {
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.config-logo {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.config-logo-thumb {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--raio-md);
+  border: 1px dashed var(--border);
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.config-logo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.config-logo-vazio {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.config-logo-acoes {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.config-logo-acoes .muted {
+  width: 100%;
+}
+
+.config-cores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.config-cor {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  box-shadow: var(--sombra);
+  transition: transform 0.06s;
+}
+
+.config-cor:hover {
+  transform: scale(1.06);
+}
+
+.config-cor.ativa {
+  border-color: var(--text);
+}
+
+.config-cor svg {
+  width: 20px;
+  height: 20px;
 }

@@ -7,8 +7,13 @@ import {
   listarClientes,
   removerCliente,
 } from "../services/clientes";
-import { corAvatar, extrairErro, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
+import { corAvatar, extrairErro, formatarTelefone, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
 import Paginacao from "../components/Paginacao";
+import EstadoVazio from "../components/EstadoVazio";
+import EstadoErro from "../components/EstadoErro";
+import ThOrdenavel from "../components/ThOrdenavel";
+import { ordenar, proximaOrdenacao, type EstadoOrdenacao } from "../lib/ordenacao";
+import { SkeletonTabela } from "../components/Skeleton";
 import { useConfirm, useToast } from "../components/Feedback";
 
 const POR_PAGINA = 10;
@@ -18,6 +23,7 @@ function formVazio(): ClienteCreate {
 }
 
 type FiltroStatus = "todos" | "ativos" | "inativos";
+type CampoCliente = "nome" | "status";
 
 export default function ClientesPage() {
   const toast = useToast();
@@ -36,6 +42,12 @@ export default function ClientesPage() {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<FiltroStatus>("todos");
   const [pagina, setPagina] = useState(1);
+  const [ord, setOrd] = useState<EstadoOrdenacao<CampoCliente>>({
+    campo: "nome",
+    direcao: "asc",
+  });
+  const ordenarPor = (campo: CampoCliente) =>
+    setOrd((o) => proximaOrdenacao(o, campo));
 
   async function carregar() {
     setCarregando(true);
@@ -67,12 +79,20 @@ export default function ClientesPage() {
     });
   }, [clientes, busca, filtro]);
 
+  const clientesOrdenados = useMemo(
+    () =>
+      ordenar(clientesFiltrados, ord, (c, campo) =>
+        campo === "status" ? (c.ativo ? 1 : 0) : c.nome
+      ),
+    [clientesFiltrados, ord]
+  );
+
   const totalPaginas = Math.max(
     1,
-    Math.ceil(clientesFiltrados.length / POR_PAGINA)
+    Math.ceil(clientesOrdenados.length / POR_PAGINA)
   );
   const paginaAtual = Math.min(pagina, totalPaginas);
-  const clientesVisiveis = clientesFiltrados.slice(
+  const clientesVisiveis = clientesOrdenados.slice(
     (paginaAtual - 1) * POR_PAGINA,
     paginaAtual * POR_PAGINA
   );
@@ -185,7 +205,9 @@ export default function ClientesPage() {
         </button>
       </div>
 
-      {erro && !modalAberto && <div className="alert erro">{erro}</div>}
+      {erro && !modalAberto && clientes.length > 0 && (
+        <div className="alert erro">{erro}</div>
+      )}
 
       <div className="toolbar">
         <div className="busca">
@@ -218,20 +240,31 @@ export default function ClientesPage() {
 
       <div className="card">
         {carregando ? (
-          <p className="vazio">Carregando...</p>
+          <SkeletonTabela />
+        ) : erro && clientes.length === 0 ? (
+          <EstadoErro mensagem={erro} onTentarNovamente={carregar} />
         ) : clientes.length === 0 ? (
-          <p className="vazio">
-            Nenhum cliente cadastrado. Clique em "+ Novo cliente" para começar.
-          </p>
+          <EstadoVazio
+            titulo="Nenhum cliente cadastrado"
+            descricao="Cadastre seus clientes para acompanhar compras, vender no fiado e enviar recibos."
+            acao={{ rotulo: "Cadastrar primeiro cliente", onClick: abrirNovo }}
+          />
         ) : clientesFiltrados.length === 0 ? (
-          <p className="vazio">Nenhum cliente encontrado para esse filtro.</p>
+          <EstadoVazio
+            titulo="Nenhum cliente encontrado"
+            descricao="Tente outro termo de busca ou ajuste o filtro de status."
+          />
         ) : (
           <table className="tabela">
             <thead>
               <tr>
-                <th>Cliente</th>
+                <ThOrdenavel campo="nome" estado={ord} onOrdenar={ordenarPor}>
+                  Cliente
+                </ThOrdenavel>
                 <th>Contato</th>
-                <th>Status</th>
+                <ThOrdenavel campo="status" estado={ord} onOrdenar={ordenarPor}>
+                  Status
+                </ThOrdenavel>
                 <th></th>
               </tr>
             </thead>
@@ -332,9 +365,11 @@ export default function ClientesPage() {
               <label>
                 Telefone
                 <input
+                  type="tel"
+                  inputMode="tel"
                   value={form.telefone ?? ""}
-                  onChange={(e) => setCampo("telefone", e.target.value)}
-                  placeholder="Opcional"
+                  onChange={(e) => setCampo("telefone", formatarTelefone(e.target.value))}
+                  placeholder="(11) 90000-0000"
                 />
               </label>
               <label>

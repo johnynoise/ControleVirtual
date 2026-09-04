@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 
 class FormaPagamento(str, Enum):
@@ -133,6 +133,20 @@ class PagamentoOut(BaseModel):
     forma_pagamento: str | None
     observacao: str | None
     criado_em: datetime
+
+
+class EnviarReciboRequest(BaseModel):
+    """Pedido para enviar o recibo da venda por email.
+
+    Se ``email`` não for informado, usa o email do cliente vinculado à venda.
+    """
+
+    email: EmailStr | None = None
+
+
+class EnviarReciboResponse(BaseModel):
+    enviado: bool
+    destinatario: EmailStr
 
 
 class ContaReceberLinha(BaseModel):

@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import type {
+  Categoria,
   Cliente,
   FormaPagamento,
   ItemVendaCreate,
@@ -9,11 +10,13 @@ import type {
   VendaCreate,
 } from "../types";
 import { listarProdutos } from "../services/produtos";
+import { listarCategorias } from "../services/categorias";
 import { criarCliente, listarClientes } from "../services/clientes";
 import { criarVenda } from "../services/vendas";
 import ReciboModal from "../components/ReciboModal";
+import EstadoVazio from "../components/EstadoVazio";
 import { useToast } from "../components/Feedback";
-import { brl, corAvatar, extrairErro, iniciais } from "../lib/ui";
+import { brl, corAvatar, extrairErro, formatarTelefone, iniciais, parseNumero } from "../lib/ui";
 
 const PAGAMENTOS: { valor: FormaPagamento; rotulo: string; icone: string }[] = [
   { valor: "dinheiro", rotulo: "Dinheiro", icone: "💵" },
@@ -36,6 +39,7 @@ export default function VendasPage() {
   const toast = useToast();
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -44,11 +48,30 @@ export default function VendasPage() {
   const [busca, setBusca] = useState("");
   const buscaRef = useRef<HTMLInputElement>(null);
 
+  // Filtro de categoria no catálogo ("todas" = sem filtro).
+  const [catFiltro, setCatFiltro] = useState<number | "todas">("todas");
+
   // Carrinho e dados da venda.
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
   const [clienteId, setClienteId] = useState<number | "">("");
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>("dinheiro");
   const [desconto, setDesconto] = useState("0");
+  const [descontoTipo, setDescontoTipo] = useState<"reais" | "percent">("reais");
+
+  // Valor recebido em dinheiro (para cálculo de troco). Não vai ao backend.
+  const [recebido, setRecebido] = useState("");
+
+  // Preço travado por padrão: só é editável após desbloqueio explícito por item
+  // (evita alteração acidental de preço no balcão).
+  const [precosAbertos, setPrecosAbertos] = useState<number[]>([]);
+
+  function alternarPreco(produto_id: number) {
+    setPrecosAbertos((atual) =>
+      atual.includes(produto_id)
+        ? atual.filter((id) => id !== produto_id)
+        : [...atual, produto_id]
+    );
+  }
 
   // Cadastro rápido de cliente direto na tela de venda.
   const [novoCliente, setNovoCliente] = useState(false);
@@ -59,17 +82,24 @@ export default function VendasPage() {
 
   // Venda exibida no recibo após finalizar.
   const [vendaRecibo, setVendaRecibo] = useState<Venda | null>(null);
+  // Dinheiro recebido/troco da venda recém-finalizada (só para o recibo).
+  const [reciboDinheiro, setReciboDinheiro] = useState<{
+    recebido: number;
+    troco: number;
+  } | null>(null);
 
   async function carregar() {
     setCarregando(true);
     setErro(null);
     try {
-      const [prods, clis] = await Promise.all([
+      const [prods, clis, cats] = await Promise.all([
         listarProdutos({ apenas_ativos: true }),
         listarClientes({ apenas_ativos: true }),
+        listarCategorias(),
       ]);
       setProdutos(prods);
       setClientes(clis);
+      setCategorias(cats);
     } catch (err) {
       setErro(extrairErro(err));
     } finally {
@@ -113,18 +143,29 @@ export default function VendasPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendaRecibo, novoCliente, carrinho, salvando, clienteId, formaPagamento, desconto]);
+  }, [vendaRecibo, novoCliente, carrinho, salvando, clienteId, formaPagamento, desconto, descontoTipo, recebido]);
+
+  // Só mostra abas de categorias que de fato têm produtos no catálogo.
+  const categoriasComProdutos = useMemo(() => {
+    const ids = new Set(produtos.map((p) => p.categoria_id));
+    return categorias.filter((c) => ids.has(c.id));
+  }, [categorias, produtos]);
 
   const produtosFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    if (!termo) return produtos;
-    return produtos.filter(
-      (p) =>
-        p.nome.toLowerCase().includes(termo) ||
-        (p.sku ?? "").toLowerCase().includes(termo) ||
-        (p.codigo_barras ?? "").toLowerCase().includes(termo)
-    );
-  }, [produtos, busca]);
+    // Busca tem prioridade sobre a categoria: ao digitar (ou ler um código de
+    // barras), procura no catálogo inteiro, independentemente da aba ativa.
+    if (termo) {
+      return produtos.filter(
+        (p) =>
+          p.nome.toLowerCase().includes(termo) ||
+          (p.sku ?? "").toLowerCase().includes(termo) ||
+          (p.codigo_barras ?? "").toLowerCase().includes(termo)
+      );
+    }
+    if (catFiltro === "todas") return produtos;
+    return produtos.filter((p) => p.categoria_id === catFiltro);
+  }, [produtos, busca, catFiltro]);
 
   const totalBruto = useMemo(
     () => carrinho.reduce((acc, i) => acc + i.preco_unitario * i.quantidade, 0),
@@ -134,8 +175,33 @@ export default function VendasPage() {
     () => carrinho.reduce((acc, i) => acc + i.quantidade, 0),
     [carrinho]
   );
-  const descontoNum = parseFloat(desconto) || 0;
-  const totalLiquido = Math.max(0, totalBruto - descontoNum);
+  // O desconto pode ser informado em reais ou em percentual do subtotal.
+  // O backend sempre recebe o valor em reais (descontoValor).
+  const descontoDigitado = parseNumero(desconto);
+  const descontoValor =
+    descontoTipo === "percent"
+      ? totalBruto * (Math.min(100, Math.max(0, descontoDigitado)) / 100)
+      : Math.max(0, descontoDigitado);
+  const totalLiquido = Math.max(0, totalBruto - descontoValor);
+
+  // Troco: só faz sentido no dinheiro. O valor recebido não é enviado ao
+  // backend — serve para o operador conferir o troco no balcão.
+  const recebidoNum = parseNumero(recebido);
+  const troco = recebidoNum - totalLiquido;
+
+  // Sugestões de cédulas: valor exato + próximos múltiplos redondos acima do
+  // total (ex.: total R$ 37 → 40, 50, 100).
+  const sugestoesRecebido = useMemo(() => {
+    if (totalLiquido <= 0) return [];
+    const valores: number[] = [totalLiquido];
+    for (const nota of [5, 10, 20, 50, 100]) {
+      const arredondado = Math.ceil(totalLiquido / nota) * nota;
+      if (arredondado > totalLiquido && !valores.includes(arredondado)) {
+        valores.push(arredondado);
+      }
+    }
+    return valores.slice(0, 4);
+  }, [totalLiquido]);
 
   // Adiciona um produto ao carrinho (ou incrementa se já estiver lá),
   // respeitando o estoque disponível.
@@ -202,26 +268,38 @@ export default function VendasPage() {
   }
 
   function definirPreco(produto_id: number, valor: string) {
-    const preco = parseFloat(valor);
+    const preco = Math.max(0, parseNumero(valor));
     setCarrinho((atual) =>
       atual.map((i) =>
-        i.produto_id === produto_id
-          ? { ...i, preco_unitario: Number.isNaN(preco) ? 0 : Math.max(0, preco) }
-          : i
+        i.produto_id === produto_id ? { ...i, preco_unitario: preco } : i
       )
     );
   }
 
   function removerDoCarrinho(produto_id: number) {
     setCarrinho((atual) => atual.filter((i) => i.produto_id !== produto_id));
+    setPrecosAbertos((atual) => atual.filter((id) => id !== produto_id));
   }
 
-  // Enter na busca adiciona o primeiro produto filtrado (leitor de código
-  // de barras ou digitação rápida).
+  // Enter na busca adiciona um produto (leitor de código de barras ou
+  // digitação rápida). Uma correspondência EXATA de código de barras ou SKU
+  // tem prioridade sobre o primeiro resultado da lista — assim o leitor nunca
+  // adiciona o produto errado por causa de um resultado parcial.
   function onBuscaKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && produtosFiltrados.length > 0) {
-      adicionarProduto(produtosFiltrados[0]);
+    if (e.key !== "Enter") return;
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return;
+    const exato = produtos.find(
+      (p) =>
+        (p.codigo_barras ?? "").toLowerCase() === termo ||
+        (p.sku ?? "").toLowerCase() === termo
+    );
+    const alvo = exato ?? produtosFiltrados[0];
+    if (alvo) {
+      adicionarProduto(alvo);
       setBusca("");
+    } else {
+      toast.erro(`Nenhum produto encontrado para "${busca.trim()}".`);
     }
   }
 
@@ -263,6 +341,9 @@ export default function VendasPage() {
     cancelarNovoCliente();
     setFormaPagamento("dinheiro");
     setDesconto("0");
+    setDescontoTipo("reais");
+    setRecebido("");
+    setPrecosAbertos([]);
     setBusca("");
   }
 
@@ -288,14 +369,21 @@ export default function VendasPage() {
     const payload: VendaCreate = {
       cliente_id: clienteId === "" ? null : clienteId,
       forma_pagamento: formaPagamento,
-      desconto: descontoNum,
+      desconto: Number(descontoValor.toFixed(2)),
       itens,
     };
+
+    // Captura o troco antes de limpar a venda (limparVenda zera o recebido).
+    const dinheiro =
+      formaPagamento === "dinheiro" && recebidoNum > 0
+        ? { recebido: recebidoNum, troco }
+        : null;
 
     try {
       const venda = await criarVenda(payload);
       limparVenda();
       await carregar();
+      setReciboDinheiro(dinheiro);
       setVendaRecibo(venda);
       toast.sucesso(`Venda #${venda.id} finalizada · ${brl(venda.total_liquido)}`);
       buscaRef.current?.focus();
@@ -342,12 +430,6 @@ export default function VendasPage() {
 
       {erro && <div className="alert erro">{erro}</div>}
 
-      {produtos.length === 0 && !carregando && (
-        <div className="alert aviso">
-          Nenhum produto cadastrado. Cadastre produtos antes de vender.
-        </div>
-      )}
-
       <div className="pdv-layout">
         {/* ----------------------- Catálogo ----------------------- */}
         <section className="pdv-catalogo card">
@@ -365,8 +447,40 @@ export default function VendasPage() {
             />
           </div>
 
+          {!busca.trim() && categoriasComProdutos.length > 0 && (
+            <div className="pdv-cats" role="tablist" aria-label="Categorias">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={catFiltro === "todas"}
+                className={`pdv-cat${catFiltro === "todas" ? " ativo" : ""}`}
+                onClick={() => setCatFiltro("todas")}
+              >
+                Todos
+              </button>
+              {categoriasComProdutos.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={catFiltro === c.id}
+                  className={`pdv-cat${catFiltro === c.id ? " ativo" : ""}`}
+                  onClick={() => setCatFiltro(c.id)}
+                >
+                  {c.nome}
+                </button>
+              ))}
+            </div>
+          )}
+
           {carregando ? (
             <p className="vazio">Carregando produtos...</p>
+          ) : produtos.length === 0 ? (
+            <EstadoVazio
+              titulo="Nenhum produto para vender"
+              descricao="Cadastre seus produtos primeiro. Depois eles aparecem aqui para montar a venda."
+              acao={{ rotulo: "Cadastrar produtos", to: "/produtos" }}
+            />
           ) : produtosFiltrados.length === 0 ? (
             <p className="vazio">Nenhum produto encontrado.</p>
           ) : (
@@ -449,6 +563,54 @@ export default function VendasPage() {
                         </svg>
                       </button>
                     </div>
+                    <div className="pdv-item-preco-linha">
+                      {precosAbertos.includes(i.produto_id) ? (
+                        <label className="pdv-item-preco">
+                          <span>R$</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={i.preco_unitario}
+                            onChange={(e) =>
+                              definirPreco(i.produto_id, e.target.value)
+                            }
+                            autoFocus
+                          />
+                        </label>
+                      ) : (
+                        <span className="pdv-item-preco-un">
+                          {brl(i.preco_unitario)}{" "}
+                          <span className="pdv-item-un">cada</span>
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className={`pdv-item-editar${precosAbertos.includes(i.produto_id) ? " ativo" : ""}`}
+                        onClick={() => alternarPreco(i.produto_id)}
+                        title={
+                          precosAbertos.includes(i.produto_id)
+                            ? "Travar preço"
+                            : "Alterar preço"
+                        }
+                        aria-label={
+                          precosAbertos.includes(i.produto_id)
+                            ? "Travar preço"
+                            : "Alterar preço"
+                        }
+                      >
+                        {precosAbertos.includes(i.produto_id) ? (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="4" y="11" width="16" height="10" rx="2" />
+                            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                          </svg>
+                        ) : (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                     <div className="pdv-item-baixo">
                       <div className="pdv-stepper">
                         <button
@@ -474,18 +636,6 @@ export default function VendasPage() {
                           +
                         </button>
                       </div>
-                      <label className="pdv-item-preco">
-                        <span>R$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={i.preco_unitario}
-                          onChange={(e) =>
-                            definirPreco(i.produto_id, e.target.value)
-                          }
-                        />
-                      </label>
                       <span className="pdv-item-subtotal">
                         {brl(i.preco_unitario * i.quantidade)}
                       </span>
@@ -532,8 +682,10 @@ export default function VendasPage() {
                       placeholder="Nome do cliente"
                     />
                     <input
+                      type="tel"
+                      inputMode="tel"
                       value={ncTelefone}
-                      onChange={(e) => setNcTelefone(e.target.value)}
+                      onChange={(e) => setNcTelefone(formatarTelefone(e.target.value))}
                       placeholder="Telefone (opcional)"
                     />
                     <input
@@ -595,20 +747,84 @@ export default function VendasPage() {
                   <span>{brl(totalBruto)}</span>
                 </div>
                 <div className="pdv-linha-desc">
-                  <label htmlFor="pdv-desconto">Desconto (R$)</label>
-                  <input
-                    id="pdv-desconto"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={desconto}
-                    onChange={(e) => setDesconto(e.target.value)}
-                  />
+                  <label htmlFor="pdv-desconto">Desconto</label>
+                  <div className="pdv-desc-campo">
+                    <div className="pdv-desc-toggle" role="group" aria-label="Tipo de desconto">
+                      <button
+                        type="button"
+                        className={descontoTipo === "reais" ? "ativo" : ""}
+                        onClick={() => setDescontoTipo("reais")}
+                        aria-pressed={descontoTipo === "reais"}
+                      >
+                        R$
+                      </button>
+                      <button
+                        type="button"
+                        className={descontoTipo === "percent" ? "ativo" : ""}
+                        onClick={() => setDescontoTipo("percent")}
+                        aria-pressed={descontoTipo === "percent"}
+                      >
+                        %
+                      </button>
+                    </div>
+                    <input
+                      id="pdv-desconto"
+                      type="text"
+                      inputMode="decimal"
+                      value={desconto}
+                      onChange={(e) => setDesconto(e.target.value)}
+                    />
+                  </div>
                 </div>
+                {descontoTipo === "percent" && descontoValor > 0 && (
+                  <div className="pdv-linha-desc">
+                    <span>Desconto aplicado</span>
+                    <span>− {brl(descontoValor)}</span>
+                  </div>
+                )}
                 <div className="pdv-total">
                   <span>Total</span>
                   <strong>{brl(totalLiquido)}</strong>
                 </div>
+
+                {formaPagamento === "dinheiro" && totalLiquido > 0 && (
+                  <div className="pdv-troco">
+                    <label htmlFor="pdv-recebido" className="pdv-label">
+                      Dinheiro recebido
+                    </label>
+                    {sugestoesRecebido.length > 0 && (
+                      <div className="pdv-troco-chips">
+                        {sugestoesRecebido.map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            className="pdv-troco-chip"
+                            onClick={() => setRecebido(String(v))}
+                          >
+                            {v === totalLiquido ? "Exato" : brl(v)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      id="pdv-recebido"
+                      className="pdv-troco-input"
+                      type="text"
+                      inputMode="decimal"
+                      value={recebido}
+                      onChange={(e) => setRecebido(e.target.value)}
+                      placeholder="0,00"
+                    />
+                    {recebidoNum > 0 && (
+                      <div
+                        className={`pdv-troco-linha ${troco >= 0 ? "ok" : "falta"}`}
+                      >
+                        <span>{troco >= 0 ? "Troco" : "Falta"}</span>
+                        <strong>{brl(Math.abs(troco))}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <button
@@ -627,7 +843,17 @@ export default function VendasPage() {
       </div>
 
       {vendaRecibo && (
-        <ReciboModal venda={vendaRecibo} onFechar={() => setVendaRecibo(null)} />
+        <ReciboModal
+          venda={vendaRecibo}
+          dinheiro={reciboDinheiro}
+          emailPadrao={
+            clientes.find((c) => c.id === vendaRecibo.cliente_id)?.email ?? undefined
+          }
+          onFechar={() => {
+            setVendaRecibo(null);
+            setReciboDinheiro(null);
+          }}
+        />
       )}
     </div>
   );

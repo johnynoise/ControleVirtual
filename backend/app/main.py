@@ -11,6 +11,7 @@ from app.database import Base, engine
 from app.routers import (
     categorias,
     clientes,
+    configuracao,
     fornecedores,
     movimentacoes,
     produtos,
@@ -94,6 +95,7 @@ app.include_router(fornecedores.router)
 app.include_router(clientes.router)
 app.include_router(vendas.router)
 app.include_router(relatorios.router)
+app.include_router(configuracao.router)
 
 
 @app.get("/")

@@ -6,11 +6,18 @@ import {
   listarFornecedores,
   removerFornecedor,
 } from "../services/fornecedores";
-import { corAvatar, extrairErro, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
+import { corAvatar, extrairErro, formatarTelefone, iniciais, linkWhatsapp, WHATSAPP_PATH } from "../lib/ui";
 import Paginacao from "../components/Paginacao";
+import EstadoVazio from "../components/EstadoVazio";
+import EstadoErro from "../components/EstadoErro";
+import ThOrdenavel from "../components/ThOrdenavel";
+import { ordenar, proximaOrdenacao, type EstadoOrdenacao } from "../lib/ordenacao";
+import { SkeletonTabela } from "../components/Skeleton";
 import { useConfirm, useToast } from "../components/Feedback";
 
 const POR_PAGINA = 10;
+
+type CampoFornecedor = "nome" | "cidade" | "status";
 
 function formVazio(): FornecedorCreate {
   return {
@@ -45,6 +52,12 @@ export default function FornecedoresPage() {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<FiltroStatus>("todos");
   const [pagina, setPagina] = useState(1);
+  const [ord, setOrd] = useState<EstadoOrdenacao<CampoFornecedor>>({
+    campo: "nome",
+    direcao: "asc",
+  });
+  const ordenarPor = (campo: CampoFornecedor) =>
+    setOrd((o) => proximaOrdenacao(o, campo));
 
   async function carregar() {
     setCarregando(true);
@@ -82,12 +95,22 @@ export default function FornecedoresPage() {
     });
   }, [fornecedores, busca, filtro]);
 
+  const fornecedoresOrdenados = useMemo(
+    () =>
+      ordenar(fornecedoresFiltrados, ord, (f, campo) => {
+        if (campo === "cidade") return f.cidade ?? "";
+        if (campo === "status") return f.ativo ? 1 : 0;
+        return f.nome;
+      }),
+    [fornecedoresFiltrados, ord]
+  );
+
   const totalPaginas = Math.max(
     1,
-    Math.ceil(fornecedoresFiltrados.length / POR_PAGINA)
+    Math.ceil(fornecedoresOrdenados.length / POR_PAGINA)
   );
   const paginaAtual = Math.min(pagina, totalPaginas);
-  const fornecedoresVisiveis = fornecedoresFiltrados.slice(
+  const fornecedoresVisiveis = fornecedoresOrdenados.slice(
     (paginaAtual - 1) * POR_PAGINA,
     paginaAtual * POR_PAGINA
   );
@@ -213,7 +236,9 @@ export default function FornecedoresPage() {
         </button>
       </div>
 
-      {erro && !modalAberto && <div className="alert erro">{erro}</div>}
+      {erro && !modalAberto && fornecedores.length > 0 && (
+        <div className="alert erro">{erro}</div>
+      )}
 
       <div className="toolbar">
         <div className="busca">
@@ -246,22 +271,35 @@ export default function FornecedoresPage() {
 
       <div className="card">
         {carregando ? (
-          <p className="vazio">Carregando...</p>
+          <SkeletonTabela />
+        ) : erro && fornecedores.length === 0 ? (
+          <EstadoErro mensagem={erro} onTentarNovamente={carregar} />
         ) : fornecedores.length === 0 ? (
-          <p className="vazio">
-            Nenhum fornecedor cadastrado. Clique em "+ Novo fornecedor" para começar.
-          </p>
+          <EstadoVazio
+            titulo="Nenhum fornecedor cadastrado"
+            descricao="Cadastre seus fornecedores para registrar entradas de estoque e acompanhar as compras."
+            acao={{ rotulo: "Cadastrar primeiro fornecedor", onClick: abrirNovo }}
+          />
         ) : fornecedoresFiltrados.length === 0 ? (
-          <p className="vazio">Nenhum fornecedor encontrado para esse filtro.</p>
+          <EstadoVazio
+            titulo="Nenhum fornecedor encontrado"
+            descricao="Tente outro termo de busca ou ajuste o filtro de status."
+          />
         ) : (
           <table className="tabela">
             <thead>
               <tr>
-                <th>Fornecedor</th>
+                <ThOrdenavel campo="nome" estado={ord} onOrdenar={ordenarPor}>
+                  Fornecedor
+                </ThOrdenavel>
                 <th>Documento</th>
                 <th>Contato</th>
-                <th>Cidade/UF</th>
-                <th>Status</th>
+                <ThOrdenavel campo="cidade" estado={ord} onOrdenar={ordenarPor}>
+                  Cidade/UF
+                </ThOrdenavel>
+                <ThOrdenavel campo="status" estado={ord} onOrdenar={ordenarPor}>
+                  Status
+                </ThOrdenavel>
                 <th></th>
               </tr>
             </thead>
@@ -369,9 +407,11 @@ export default function FornecedoresPage() {
               <label>
                 Telefone
                 <input
+                  type="tel"
+                  inputMode="tel"
                   value={form.telefone ?? ""}
-                  onChange={(e) => setCampo("telefone", e.target.value)}
-                  placeholder="Opcional"
+                  onChange={(e) => setCampo("telefone", formatarTelefone(e.target.value))}
+                  placeholder="(11) 90000-0000"
                 />
               </label>
               <label>

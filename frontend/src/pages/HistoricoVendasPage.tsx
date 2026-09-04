@@ -5,6 +5,9 @@ import { devolverVenda, listarVendas } from "../services/vendas";
 import ReciboModal from "../components/ReciboModal";
 import ReceberPagamentoModal from "../components/ReceberPagamentoModal";
 import Paginacao from "../components/Paginacao";
+import EstadoVazio from "../components/EstadoVazio";
+import EstadoErro from "../components/EstadoErro";
+import { SkeletonTabela } from "../components/Skeleton";
 import { useToast } from "../components/Feedback";
 import { brl, dataHora, extrairErro } from "../lib/ui";
 
@@ -190,7 +193,7 @@ export default function HistoricoVendasPage() {
         </Link>
       </div>
 
-      {erro && <div className="alert erro">{erro}</div>}
+      {erro && vendas.length > 0 && <div className="alert erro">{erro}</div>}
 
       <div className="kpis" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         <div className="kpi">
@@ -227,11 +230,22 @@ export default function HistoricoVendasPage() {
         </div>
 
         {carregando ? (
-          <p className="vazio">Carregando...</p>
+          <SkeletonTabela />
+        ) : erro && vendas.length === 0 ? (
+          <EstadoErro mensagem={erro} onTentarNovamente={carregar} />
         ) : vendasFiltradas.length === 0 ? (
-          <p className="vazio">
-            {busca ? "Nenhuma venda encontrada." : "Nenhuma venda ainda."}
-          </p>
+          busca ? (
+            <EstadoVazio
+              titulo="Nenhuma venda encontrada"
+              descricao="Tente outro termo de busca."
+            />
+          ) : (
+            <EstadoVazio
+              titulo="Nenhuma venda ainda"
+              descricao="As vendas que você finalizar no PDV aparecem aqui, com recibo e opção de devolução."
+              acao={{ rotulo: "Ir para o PDV", to: "/vendas" }}
+            />
+          )
         ) : (
           <table className="tabela">
             <thead>

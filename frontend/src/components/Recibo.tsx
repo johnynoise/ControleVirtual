@@ -1,7 +1,5 @@
 import type { Venda } from "../types";
-
-// Nome exibido no topo do recibo. Ajuste para o nome da sua loja.
-const NOME_LOJA = "ControleVirtual";
+import { useConfiguracao } from "./ConfiguracaoContext";
 
 const PAGAMENTO_LABEL: Record<string, string> = {
   dinheiro: "Dinheiro",
@@ -21,11 +19,23 @@ function dataHora(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
-export default function Recibo({ venda }: { venda: Venda }) {
+export default function Recibo({
+  venda,
+  dinheiro,
+}: {
+  venda: Venda;
+  dinheiro?: { recebido: number; troco: number } | null;
+}) {
+  const { config } = useConfiguracao();
+  const nomeLoja = config?.nome_loja || "ControleVirtual";
+
   return (
     <div className="recibo">
       <div className="recibo-cabecalho">
-        <strong>{NOME_LOJA}</strong>
+        {config?.logo && (
+          <img src={config.logo} alt={nomeLoja} className="recibo-logo" />
+        )}
+        <strong>{nomeLoja}</strong>
         <div>Recibo de venda</div>
       </div>
 
@@ -72,6 +82,18 @@ export default function Recibo({ venda }: { venda: Venda }) {
           <span>Pagamento</span>
           <span>{venda.forma_pagamento ? PAGAMENTO_LABEL[venda.forma_pagamento] ?? venda.forma_pagamento : "—"}</span>
         </div>
+        {dinheiro && (
+          <>
+            <div>
+              <span>Dinheiro</span>
+              <span>{brl(dinheiro.recebido)}</span>
+            </div>
+            <div>
+              <span>Troco</span>
+              <span>{brl(dinheiro.troco)}</span>
+            </div>
+          </>
+        )}
         {venda.a_prazo && !venda.cancelada_em && (
           <>
             {parseFloat(venda.total_pago) > 0 && (

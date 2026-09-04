@@ -7,6 +7,9 @@ import {
   removerCategoria,
 } from "../services/categorias";
 import Paginacao from "../components/Paginacao";
+import EstadoVazio from "../components/EstadoVazio";
+import EstadoErro from "../components/EstadoErro";
+import { SkeletonTabela } from "../components/Skeleton";
 import { useConfirm, useToast } from "../components/Feedback";
 import { extrairErro } from "../lib/ui";
 
@@ -153,7 +156,7 @@ export default function CategoriasPage() {
         automaticamente.
       </p>
 
-      {erro && <div className="alert erro">{erro}</div>}
+      {erro && categorias.length > 0 && <div className="alert erro">{erro}</div>}
 
       <form className="card form" onSubmit={salvar}>
         <h2>{editandoId === null ? "Nova categoria" : "Editar categoria"}</h2>
@@ -276,9 +279,14 @@ export default function CategoriasPage() {
       <div className="card">
         <h2>Categorias cadastradas</h2>
         {carregando ? (
-          <p className="vazio">Carregando...</p>
+          <SkeletonTabela />
+        ) : erro && categorias.length === 0 ? (
+          <EstadoErro mensagem={erro} onTentarNovamente={carregar} />
         ) : categorias.length === 0 ? (
-          <p className="vazio">Nenhuma categoria ainda.</p>
+          <EstadoVazio
+            titulo="Nenhuma categoria ainda"
+            descricao="As categorias definem os campos dos seus produtos. Crie a primeira no formulário acima para depois cadastrar produtos."
+          />
         ) : (
           <table className="tabela">
             <thead>

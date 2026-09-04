@@ -5,6 +5,33 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ControleVirtual</title>
+    <script>
+      // Aplica o tema salvo (ou o do sistema) antes de renderizar, evitando
+      // o "flash" de tela clara ao carregar no modo escuro.
+      (function () {
+        try {
+          var t = localStorage.getItem("tema");
+          if (t !== "claro" && t !== "escuro") {
+            t = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "escuro"
+              : "claro";
+          }
+          document.documentElement.dataset.tema = t;
+
+          // Aplica a cor de destaque salva (mesma lógica de aplicarCor),
+          // evitando o "flash" da cor padrão ao carregar.
+          var cor = localStorage.getItem("config_cor");
+          if (cor) {
+            var s = document.documentElement.style;
+            s.setProperty("--azul", cor);
+            s.setProperty("--azul-escuro", "color-mix(in srgb, " + cor + " 78%, var(--text))");
+            s.setProperty("--azul-suave", "color-mix(in srgb, " + cor + " 14%, var(--surface))");
+          }
+          var nome = localStorage.getItem("config_nome");
+          if (nome) document.title = nome;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

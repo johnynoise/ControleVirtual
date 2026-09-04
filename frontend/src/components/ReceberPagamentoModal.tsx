@@ -80,7 +80,7 @@ export default function ReceberPagamentoModal({
 
         {erro && <div className="alert erro">{erro}</div>}
 
-        <div className="kpis" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+        <div className="kpis">
           <div className="kpi">
             <span className="kpi-label">Total da venda</span>
             <span className="kpi-valor">{brl(venda.total_liquido)}</span>

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import { FeedbackProvider } from "./components/Feedback";
+import { ConfiguracaoProvider } from "./components/ConfiguracaoContext";
 
 // Carregamento sob demanda das páginas: cada rota vira um chunk separado,
 // mantendo o pacote inicial (dashboard) pequeno e trazendo bibliotecas
@@ -29,6 +30,7 @@ const VendasCategoriaPage = lazy(() => import("./pages/relatorios/VendasCategori
 const PerdasPage = lazy(() => import("./pages/relatorios/PerdasPage"));
 const GiroPage = lazy(() => import("./pages/relatorios/GiroPage"));
 const ClientesInativosPage = lazy(() => import("./pages/relatorios/ClientesInativosPage"));
+const ConfiguracoesPage = lazy(() => import("./pages/ConfiguracoesPage"));
 
 function Carregando() {
   return <p className="vazio">Carregando...</p>;
@@ -37,6 +39,7 @@ function Carregando() {
 function App() {
   return (
     <FeedbackProvider>
+      <ConfiguracaoProvider>
       <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
@@ -225,10 +228,19 @@ function App() {
               </Suspense>
             }
           />
+          <Route
+            path="configuracoes"
+            element={
+              <Suspense fallback={<Carregando />}>
+                <ConfiguracoesPage />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
       </BrowserRouter>
+      </ConfiguracaoProvider>
     </FeedbackProvider>
   );
 }
