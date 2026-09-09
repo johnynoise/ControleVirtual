@@ -18,9 +18,12 @@ from app.schemas.despesa import (
     CategoriaDespesa,
     CategoriaDespesaOpcao,
     DespesaCreate,
+    DespesaLoteOut,
     DespesaOut,
     DespesaPagamento,
+    DespesaRemocaoOut,
     DespesaUpdate,
+    EscopoRecorrencia,
     ResumoDespesas,
 )
 
@@ -124,21 +127,42 @@ def obter_despesa(despesa_id: int, db: Session = Depends(get_db)):
     return despesa
 
 
-@router.post("", response_model=DespesaOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=DespesaLoteOut, status_code=status.HTTP_201_CREATED)
 def criar_despesa(dados: DespesaCreate, db: Session = Depends(get_db)):
+    """Lança uma despesa avulsa ou os meses de uma despesa fixa.
+
+    Com ``recorrente`` verdadeiro, a API cria um lançamento por mês do mês da
+    competência até ``repetir_ate`` (padrão: dezembro do mesmo ano). A resposta
+    sempre traz a lista, mesmo quando é uma linha só.
+    """
     try:
-        return crud_despesa.criar(db, dados)
+        criadas = crud_despesa.criar(db, dados)
     except ErroDespesa as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return {
+        "quantidade": len(criadas),
+        "grupo_recorrencia": criadas[0].grupo_recorrencia if criadas else None,
+        "despesas": criadas,
+    }
 
 
 @router.put("/{despesa_id}", response_model=DespesaOut)
-def atualizar_despesa(despesa_id: int, dados: DespesaUpdate, db: Session = Depends(get_db)):
+def atualizar_despesa(
+    despesa_id: int,
+    dados: DespesaUpdate,
+    escopo: EscopoRecorrencia = EscopoRecorrencia.esta,
+    db: Session = Depends(get_db),
+):
+    """Edita a despesa. Com ``escopo=esta_e_proximas``, alcança os meses seguintes.
+
+    A competência e o pagamento nunca são copiados para os outros meses: cada
+    lançamento guarda os seus. Meses já passados também ficam intactos.
+    """
     despesa = crud_despesa.obter(db, despesa_id)
     if despesa is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Despesa não encontrada.")
     try:
-        return crud_despesa.atualizar(db, despesa, dados)
+        return crud_despesa.atualizar(db, despesa, dados, escopo=escopo.value)
     except ErroDespesa as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
@@ -156,9 +180,15 @@ def pagar_despesa(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
-@router.delete("/{despesa_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remover_despesa(despesa_id: int, db: Session = Depends(get_db)):
+@router.delete("/{despesa_id}", response_model=DespesaRemocaoOut)
+def remover_despesa(
+    despesa_id: int,
+    escopo: EscopoRecorrencia = EscopoRecorrencia.esta,
+    db: Session = Depends(get_db),
+):
+    """Remove a despesa. Com ``escopo=esta_e_proximas``, leva os meses seguintes."""
     despesa = crud_despesa.obter(db, despesa_id)
     if despesa is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Despesa não encontrada.")
-    crud_despesa.remover(db, despesa)
+    removidas = crud_despesa.remover(db, despesa, escopo=escopo.value)
+    return {"removidas": removidas}

@@ -90,6 +90,11 @@ class DespesaBase(BaseModel):
 
 
 class DespesaCreate(DespesaBase):
+    # Mês final da repetição, usado só quando ``recorrente`` é verdadeiro. Vale
+    # o mês da data (o dia é ignorado). Nulo = repete até dezembro do ano da
+    # competência inicial.
+    repetir_ate: date | None = None
+
     @model_validator(mode="after")
     def _ajustar_operacional(self) -> "DespesaCreate":
         """Pré-marca retirada do dono e compra de bem como não operacionais.
@@ -100,6 +105,23 @@ class DespesaCreate(DespesaBase):
         if "operacional" not in self.model_fields_set:
             if self.categoria.value in CATEGORIAS_NAO_OPERACIONAIS:
                 self.operacional = False
+        return self
+
+    @model_validator(mode="after")
+    def _validar_repeticao(self) -> "DespesaCreate":
+        """Garante que o mês final da repetição não é anterior ao inicial."""
+        if self.repetir_ate is None:
+            return self
+        if not self.recorrente:
+            # Sem marcação de despesa fixa, o campo não tem efeito: descarta
+            # para não guardar uma intenção que ninguém vai cumprir.
+            self.repetir_ate = None
+            return self
+        inicio = (self.data_competencia.year, self.data_competencia.month)
+        if (self.repetir_ate.year, self.repetir_ate.month) < inicio:
+            raise ValueError(
+                "O mês final da repetição não pode ser anterior ao mês inicial."
+            )
         return self
 
 
@@ -132,6 +154,7 @@ class DespesaOut(BaseModel):
     documento: str | None
     operacional: bool
     recorrente: bool
+    grupo_recorrencia: str | None
     observacao: str | None
     criado_em: datetime
     atualizado_em: datetime
@@ -197,3 +220,24 @@ class DespesaPagamento(BaseModel):
     """Corpo do endpoint que marca a despesa como paga."""
 
     data_pagamento: date | None = None
+
+
+class EscopoRecorrencia(str, Enum):
+    """A quais lançamentos de uma despesa fixa a alteração se aplica."""
+
+    esta = "esta"
+    esta_e_proximas = "esta_e_proximas"
+
+
+class DespesaLoteOut(BaseModel):
+    """Resposta do lançamento: uma despesa avulsa ou os meses de uma fixa."""
+
+    quantidade: int
+    grupo_recorrencia: str | None
+    despesas: list[DespesaOut]
+
+
+class DespesaRemocaoOut(BaseModel):
+    """Quantos lançamentos a remoção alcançou."""
+
+    removidas: int

@@ -875,7 +875,10 @@ export interface Despesa {
   documento?: string | null;
   /** Entra na apuração do resultado do período. */
   operacional: boolean;
+  /** Despesa fixa mensal: este lançamento é um dos meses gerados. */
   recorrente: boolean;
+  /** Costura os meses gerados pelo mesmo cadastro de despesa fixa. */
+  grupo_recorrencia?: string | null;
   observacao?: string | null;
   paga: boolean;
   criado_em: string;
@@ -891,9 +894,28 @@ export interface DespesaCreate {
   forma_pagamento?: string | null;
   fornecedor_id?: number | null;
   documento?: string | null;
-  operacional: boolean;
+  /**
+   * Entra na apuração do resultado. Omitido no lançamento, o backend deduz da
+   * categoria (retirada do dono e compra de bem nascem desmarcadas).
+   */
+  operacional?: boolean;
   recorrente: boolean;
+  /**
+   * Mês final da repetição (só vale com `recorrente`). Omitido, o backend
+   * repete até dezembro do ano da competência inicial.
+   */
+  repetir_ate?: string | null;
   observacao?: string | null;
+}
+
+/** A quais lançamentos de uma despesa fixa a alteração se aplica. */
+export type EscopoRecorrencia = "esta" | "esta_e_proximas";
+
+/** Resposta do lançamento: uma avulsa ou os meses gerados de uma fixa. */
+export interface DespesaLoteCriada {
+  quantidade: number;
+  grupo_recorrencia?: string | null;
+  despesas: Despesa[];
 }
 
 /** Opção de categoria vinda do backend (evita duplicar a lista no frontend). */

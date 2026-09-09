@@ -3,6 +3,7 @@ import type {
   CategoriaDespesaOpcao,
   Despesa,
   DespesaCreate,
+  EscopoRecorrencia,
   FiltrosDespesa,
   Fornecedor,
   ResumoDespesas,
@@ -29,7 +30,17 @@ import { useConfirm, useToast } from "../components/Feedback";
 
 const POR_PAGINA = 12;
 
+// Teto de lançamentos gerados por uma despesa fixa (espelha o backend).
+const MAX_RECORRENCIAS = 60;
+
 type CampoDespesa = "competencia" | "descricao" | "categoria" | "valor" | "situacao";
+
+/**
+ * Os dois tipos de despesa do formulário. É a primeira e mais importante
+ * escolha do lançamento: "avulsa" aconteceu uma vez, "fixa" repete todo mês e
+ * gera um lançamento por mês.
+ */
+type TipoDespesa = "avulsa" | "fixa";
 
 const MESES = [
   "Janeiro",
@@ -78,6 +89,35 @@ function hojeISO(): string {
   const mes = String(d.getMonth() + 1).padStart(2, "0");
   const dia = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+/** Ano e mês de uma data ISO, como par de números. */
+function anoMes(iso: string): [number, number] {
+  const [ano, mes] = iso.split("-").map(Number);
+  return [ano || 0, mes || 0];
+}
+
+/** Rótulo de um mês/ano no formato "dezembro de 2026". */
+function rotuloMesAno(ano: number, mes: number): string {
+  return `${MESES[mes - 1].toLowerCase()} de ${ano}`;
+}
+
+/**
+ * Mês final sugerido para a repetição: dezembro do ano da competência. Quando
+ * sobram menos de três meses no ano, estica até dezembro do ano seguinte —
+ * lançar uma despesa fixa em dezembro e gerar um mês só não ajuda ninguém.
+ */
+function padraoRepetirAte(competencia: string): string {
+  const [ano, mes] = anoMes(competencia);
+  return `${12 - mes < 2 ? ano + 1 : ano}-12`;
+}
+
+/** Quantos meses vão de uma competência até o mês final, inclusive. */
+function contarMeses(competencia: string, ate: string): number {
+  const [a1, m1] = anoMes(competencia);
+  const [a2, m2] = anoMes(ate);
+  if (!a1 || !a2) return 0;
+  return Math.max(0, (a2 - a1) * 12 + (m2 - m1) + 1);
 }
 
 function formVazio(): DespesaCreate {
@@ -130,6 +170,23 @@ export default function DespesasPage() {
   const [operacionalTocado, setOperacionalTocado] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState<string | null>(null);
+
+  // Tipo escolhido no primeiro passo do modal. Nulo = ainda escolhendo.
+  const [tipo, setTipo] = useState<TipoDespesa | null>(null);
+  // Mês final da repetição, no formato "YYYY-MM".
+  const [repetirAte, setRepetirAte] = useState("");
+  const [repetirAteTocado, setRepetirAteTocado] = useState(false);
+  // Campos opcionais, recolhidos por padrão.
+  const [detalhes, setDetalhes] = useState(false);
+
+  // Pedido de escopo ao mexer num lançamento de despesa fixa. Guarda a função
+  // que resolve a Promise, no mesmo padrão do useConfirm global.
+  const [pedidoEscopo, setPedidoEscopo] = useState<{
+    acao: "salvar" | "excluir";
+    resolve: (escopo: EscopoRecorrencia | null) => void;
+  } | null>(null);
+
+  const edicao = editandoId !== null;
 
   // Início e fim do período (o mês 0 cobre o ano inteiro).
   const { inicio, fim } = useMemo(() => {
@@ -219,9 +276,15 @@ export default function DespesasPage() {
   );
 
   function abrirNovo() {
+    const vazio = formVazio();
     setEditandoId(null);
-    setForm(formVazio());
+    setForm(vazio);
     setOperacionalTocado(false);
+    setRepetirAte(padraoRepetirAte(vazio.data_competencia));
+    setRepetirAteTocado(false);
+    setDetalhes(false);
+    // Sem tipo: o modal abre no passo da escolha.
+    setTipo(null);
     setErroForm(null);
     setModalAberto(true);
   }
@@ -243,6 +306,13 @@ export default function DespesasPage() {
     });
     // Na edição a marcação já é uma escolha feita: não sobrescreve.
     setOperacionalTocado(true);
+    setTipo(d.recorrente ? "fixa" : "avulsa");
+    setRepetirAte(padraoRepetirAte(d.data_competencia));
+    setRepetirAteTocado(false);
+    // Abre os opcionais já preenchidos, para a edição não parecer que os perdeu.
+    setDetalhes(
+      Boolean(d.forma_pagamento || d.documento || d.fornecedor_id || d.observacao)
+    );
     setErroForm(null);
     setModalAberto(true);
   }
@@ -252,7 +322,75 @@ export default function DespesasPage() {
     setEditandoId(null);
     setForm(formVazio());
     setOperacionalTocado(false);
+    setTipo(null);
+    setRepetirAte("");
+    setRepetirAteTocado(false);
+    setDetalhes(false);
     setErroForm(null);
+  }
+
+  /** Volta ao primeiro passo para trocar o tipo, preservando o que foi digitado. */
+  function trocarTipo() {
+    setTipo(null);
+    setErroForm(null);
+  }
+
+  /** Escolhe o tipo e segue para os campos. */
+  function escolherTipo(novo: TipoDespesa) {
+    setTipo(novo);
+    if (novo === "fixa" && !repetirAteTocado) {
+      setRepetirAte(padraoRepetirAte(form.data_competencia));
+    }
+  }
+
+  /** Troca a competência e, se o usuário não mexeu, reajusta o fim da repetição. */
+  function setCompetencia(valor: string) {
+    setForm((f) => ({ ...f, data_competencia: valor }));
+    if (!repetirAteTocado && valor) setRepetirAte(padraoRepetirAte(valor));
+  }
+
+  // Opções do "repetir até": dois anos de meses a partir da competência.
+  const opcoesRepetirAte = useMemo(() => {
+    const [ano, mes] = anoMes(form.data_competencia);
+    if (!ano) return [];
+    return Array.from({ length: 24 }, (_, i) => {
+      const total = mes - 1 + i;
+      const a = ano + Math.floor(total / 12);
+      const m = (total % 12) + 1;
+      return {
+        valor: `${a}-${String(m).padStart(2, "0")}`,
+        rotulo: rotuloMesAno(a, m),
+      };
+    });
+  }, [form.data_competencia]);
+
+  const mesesGerados = contarMeses(form.data_competencia, repetirAte);
+
+  // Se a competência passar do mês final escolhido, volta para a sugestão.
+  useEffect(() => {
+    if (tipo !== "fixa") return;
+    if (contarMeses(form.data_competencia, repetirAte) < 1) {
+      setRepetirAte(padraoRepetirAte(form.data_competencia));
+    }
+  }, [tipo, form.data_competencia, repetirAte]);
+
+  // Grupo de recorrência do lançamento em edição: define se cabe perguntar o
+  // escopo (só esta ou esta e as próximas).
+  const grupoEditado = useMemo(
+    () => despesas.find((d) => d.id === editandoId)?.grupo_recorrencia ?? null,
+    [despesas, editandoId]
+  );
+
+  /** Abre o modal de escopo e resolve com a escolha (nulo = cancelou). */
+  function pedirEscopo(acao: "salvar" | "excluir") {
+    return new Promise<EscopoRecorrencia | null>((resolve) =>
+      setPedidoEscopo({ acao, resolve })
+    );
+  }
+
+  function responderEscopo(escopo: EscopoRecorrencia | null) {
+    pedidoEscopo?.resolve(escopo);
+    setPedidoEscopo(null);
   }
 
   function setCampo<K extends keyof DespesaCreate>(chave: K, valor: DespesaCreate[K]) {
@@ -279,28 +417,57 @@ export default function DespesasPage() {
       return;
     }
 
+    const fixa = tipo === "fixa";
+    if (fixa && !edicao && (mesesGerados < 1 || mesesGerados > MAX_RECORRENCIAS)) {
+      setErroForm("Escolha um mês final de repetição dentro dos próximos cinco anos.");
+      return;
+    }
+
     const payload: DespesaCreate = {
       ...form,
       descricao: form.descricao.trim(),
       valor: Number(valorNumero.toFixed(2)),
-      data_pagamento: form.data_pagamento || null,
+      // No lançamento de uma fixa todos os meses nascem em aberto: o pagamento
+      // é registrado mês a mês pelo botão Pagar da lista.
+      data_pagamento: (fixa && !edicao ? null : form.data_pagamento) || null,
       forma_pagamento: form.forma_pagamento || null,
       documento: form.documento?.trim() || null,
       observacao: form.observacao?.trim() || null,
       fornecedor_id: form.fornecedor_id ?? null,
+      recorrente: fixa,
+      repetir_ate: fixa && !edicao ? `${repetirAte}-01` : null,
     };
+
+    // Mexer num mês de uma despesa fixa é ambíguo: pergunta o alcance antes.
+    let escopo: EscopoRecorrencia = "esta";
+    if (edicao && grupoEditado) {
+      const escolha = await pedirEscopo("salvar");
+      if (escolha === null) return;
+      escopo = escolha;
+    }
 
     setSalvando(true);
     try {
-      const edicao = editandoId !== null;
       if (editandoId === null) {
-        await criarDespesa(payload);
-      } else {
-        await atualizarDespesa(editandoId, payload);
+        const lote = await criarDespesa(payload);
+        fecharModal();
+        await carregar(filtros);
+        toast.sucesso(
+          lote.quantidade > 1
+            ? `Despesa fixa lançada em ${lote.quantidade} meses.`
+            : "Despesa lançada."
+        );
+        return;
       }
+
+      await atualizarDespesa(editandoId, payload, escopo);
       fecharModal();
       await carregar(filtros);
-      toast.sucesso(edicao ? "Despesa salva." : "Despesa lançada.");
+      toast.sucesso(
+        escopo === "esta_e_proximas"
+          ? "Despesa salva neste mês e nos próximos."
+          : "Despesa salva."
+      );
     } catch (err) {
       setErroForm(extrairErro(err));
     } finally {
@@ -319,17 +486,29 @@ export default function DespesasPage() {
   }
 
   async function excluir(d: Despesa) {
-    const ok = await confirmar({
-      titulo: "Remover despesa",
-      mensagem: `Tem certeza que deseja remover "${d.descricao}"?`,
-      confirmar: "Remover",
-      perigo: true,
-    });
-    if (!ok) return;
+    let escopo: EscopoRecorrencia = "esta";
+
+    if (d.grupo_recorrencia) {
+      // Faz parte de uma despesa fixa: o escopo já é a própria confirmação.
+      const escolha = await pedirEscopo("excluir");
+      if (escolha === null) return;
+      escopo = escolha;
+    } else {
+      const ok = await confirmar({
+        titulo: "Remover despesa",
+        mensagem: `Tem certeza que deseja remover "${d.descricao}"?`,
+        confirmar: "Remover",
+        perigo: true,
+      });
+      if (!ok) return;
+    }
+
     try {
-      await removerDespesa(d.id);
+      const removidas = await removerDespesa(d.id, escopo);
       await carregar(filtros);
-      toast.sucesso("Despesa removida.");
+      toast.sucesso(
+        removidas > 1 ? `${removidas} lançamentos removidos.` : "Despesa removida."
+      );
     } catch (err) {
       toast.erro(extrairErro(err));
     }
@@ -508,7 +687,7 @@ export default function DespesasPage() {
                   <td>
                     <div className="contato-linha">
                       <strong>{d.descricao}</strong>
-                      {d.recorrente && <span className="muted">mensal</span>}
+                      {d.recorrente && <span className="muted">fixa mensal</span>}
                     </div>
                   </td>
                   <td>
@@ -620,166 +799,346 @@ export default function DespesasPage() {
 
       {modalAberto && (
         <div className="recibo-overlay" onClick={fecharModal}>
-          <form
-            className="modal-box form"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={salvar}
-          >
-            <h2>{editandoId === null ? "Nova despesa" : "Editar despesa"}</h2>
+          {tipo === null ? (
+            // Passo 1: a escolha do tipo. Define tudo o que vem depois.
+            <div className="modal-box form" onClick={(e) => e.stopPropagation()}>
+              <h2>Nova despesa</h2>
+              <p className="subtitle">
+                Aconteceu uma vez ou se repete todo mês?
+              </p>
 
-            {erroForm && <div className="alert erro">{erroForm}</div>}
-
-            <label style={{ marginBottom: "1rem" }}>
-              Descrição
-              <input
-                value={form.descricao}
-                onChange={(e) => setCampo("descricao", e.target.value)}
-                placeholder="Ex.: Aluguel da loja - janeiro"
-                required
-                autoFocus
-              />
-            </label>
-
-            <div className="grid-2">
-              <label>
-                Categoria
-                <select
-                  value={form.categoria}
-                  onChange={(e) => trocarCategoria(e.target.value)}
-                  required
+              <div className="despesa-tipos">
+                <button
+                  type="button"
+                  className="despesa-tipo"
+                  onClick={() => escolherTipo("avulsa")}
+                  autoFocus
                 >
-                  {categorias.map((c) => (
-                    <option key={c.valor} value={c.valor}>
-                      {c.rotulo}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Valor
-                <input
-                  inputMode="decimal"
-                  value={form.valor}
-                  onChange={(e) => setCampo("valor", e.target.value)}
-                  placeholder="0,00"
-                  required
-                />
-              </label>
-            </div>
-
-            <div className="grid-2">
-              <label>
-                Competência (mês a que se refere)
-                <input
-                  type="date"
-                  value={form.data_competencia}
-                  onChange={(e) => setCampo("data_competencia", e.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Data do pagamento
-                <input
-                  type="date"
-                  value={form.data_pagamento ?? ""}
-                  onChange={(e) => setCampo("data_pagamento", e.target.value)}
-                />
-              </label>
-            </div>
-            <p className="subtitle" style={{ marginBottom: "1rem" }}>
-              Sem data de pagamento, a despesa fica como “em aberto”.
-            </p>
-
-            <div className="grid-2">
-              <label>
-                Forma de pagamento
-                <select
-                  value={form.forma_pagamento ?? ""}
-                  onChange={(e) => setCampo("forma_pagamento", e.target.value)}
+                  <span className="despesa-tipo-titulo">Despesa do mês</span>
+                  <span className="despesa-tipo-desc">
+                    Aconteceu uma vez: conserto, frete, compra de embalagem.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="despesa-tipo"
+                  onClick={() => escolherTipo("fixa")}
                 >
-                  <option value="">Não informada</option>
-                  {FORMAS_PAGAMENTO.map((f) => (
-                    <option key={f.valor} value={f.valor}>
-                      {f.rotulo}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Nota / recibo
+                  <span className="despesa-tipo-titulo">Despesa fixa mensal</span>
+                  <span className="despesa-tipo-desc">
+                    Repete todo mês: aluguel, internet, contador. Lança os meses
+                    de uma vez.
+                  </span>
+                </button>
+              </div>
+
+              <div className="form-acoes">
+                <button type="button" className="btn secundario" onClick={fecharModal}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            // Passo 2: os campos, enxutos. O que é opcional fica recolhido.
+            <form
+              className="modal-box form"
+              onClick={(e) => e.stopPropagation()}
+              onSubmit={salvar}
+            >
+              <h2>
+                {edicao
+                  ? "Editar despesa"
+                  : tipo === "fixa"
+                    ? "Nova despesa fixa mensal"
+                    : "Nova despesa do mês"}
+              </h2>
+
+              {!edicao && (
+                <button type="button" className="trocar-tipo" onClick={trocarTipo}>
+                  ← escolher outro tipo
+                </button>
+              )}
+              {edicao && grupoEditado && (
+                <p className="subtitle">
+                  Este lançamento é um dos meses de uma despesa fixa.
+                </p>
+              )}
+
+              {erroForm && <div className="alert erro">{erroForm}</div>}
+
+              <label style={{ marginBottom: "1rem" }}>
+                Descrição
                 <input
-                  value={form.documento ?? ""}
-                  onChange={(e) => setCampo("documento", e.target.value)}
-                  placeholder="Opcional"
+                  value={form.descricao}
+                  onChange={(e) => setCampo("descricao", e.target.value)}
+                  placeholder={
+                    tipo === "fixa" ? "Ex.: Aluguel da loja" : "Ex.: Conserto da vitrine"
+                  }
+                  required
+                  autoFocus
                 />
               </label>
-            </div>
 
-            <label style={{ marginBottom: "1rem" }}>
-              Fornecedor / prestador
-              <select
-                value={form.fornecedor_id ?? ""}
-                onChange={(e) =>
-                  setCampo("fornecedor_id", e.target.value ? Number(e.target.value) : null)
-                }
+              <div className="grid-2">
+                <label>
+                  Categoria
+                  <select
+                    value={form.categoria}
+                    onChange={(e) => trocarCategoria(e.target.value)}
+                    required
+                  >
+                    {categorias.map((c) => (
+                      <option key={c.valor} value={c.valor}>
+                        {c.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Valor
+                  <input
+                    inputMode="decimal"
+                    value={form.valor}
+                    onChange={(e) => setCampo("valor", e.target.value)}
+                    placeholder="0,00"
+                    required
+                  />
+                </label>
+              </div>
+
+              {tipo === "fixa" && !edicao ? (
+                <>
+                  <div className="grid-2">
+                    <label>
+                      Primeiro vencimento
+                      <input
+                        type="date"
+                        value={form.data_competencia}
+                        onChange={(e) => setCompetencia(e.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Repetir até
+                      <select
+                        value={repetirAte}
+                        onChange={(e) => {
+                          setRepetirAteTocado(true);
+                          setRepetirAte(e.target.value);
+                        }}
+                      >
+                        {opcoesRepetirAte.map((o) => (
+                          <option key={o.valor} value={o.valor}>
+                            {o.rotulo}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="previa-fixa">
+                    Cria <strong>{mesesGerados}</strong>{" "}
+                    {mesesGerados === 1 ? "lançamento" : "lançamentos"} em aberto, um
+                    por mês
+                    {parseNumero(form.valor) > 0
+                      ? `, de ${brl(parseNumero(form.valor))} cada`
+                      : ""}
+                    . Cada mês é pago e editado separadamente.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="grid-2">
+                    <label>
+                      {tipo === "fixa" ? "Vencimento deste mês" : "Data"}
+                      <input
+                        type="date"
+                        value={form.data_competencia}
+                        onChange={(e) => setCompetencia(e.target.value)}
+                        required
+                      />
+                    </label>
+                    {form.data_pagamento ? (
+                      <label>
+                        Pago em
+                        <input
+                          type="date"
+                          value={form.data_pagamento}
+                          onChange={(e) => setCampo("data_pagamento", e.target.value)}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.data_pagamento)}
+                      onChange={(e) =>
+                        setCampo(
+                          "data_pagamento",
+                          e.target.checked ? form.data_competencia : ""
+                        )
+                      }
+                    />
+                    Já foi paga
+                  </label>
+                  <p className="subtitle" style={{ marginTop: "-0.5rem" }}>
+                    Sem marcar, fica em aberto e você usa o botão Pagar na lista.
+                  </p>
+                </>
+              )}
+
+              <button
+                type="button"
+                className="form-mais"
+                onClick={() => setDetalhes((v) => !v)}
+                aria-expanded={detalhes}
               >
-                <option value="">Nenhum</option>
-                {fornecedores.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={form.operacional}
-                onChange={(e) => {
-                  setOperacionalTocado(true);
-                  setCampo("operacional", e.target.checked);
-                }}
-              />
-              Entra na apuração do resultado
-            </label>
-            <p className="subtitle" style={{ marginTop: "-0.5rem" }}>
-              Desmarque para retirada do dono e compra de bem: são saídas de
-              dinheiro, mas não despesa do período.
-            </p>
-
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={form.recorrente}
-                onChange={(e) => setCampo("recorrente", e.target.checked)}
-              />
-              Despesa mensal (se repete todo mês)
-            </label>
-
-            <label style={{ marginBottom: "1rem" }}>
-              Observação
-              <textarea
-                value={form.observacao ?? ""}
-                onChange={(e) => setCampo("observacao", e.target.value)}
-                rows={2}
-                placeholder="Opcional"
-              />
-            </label>
-
-            <div className="form-acoes">
-              <button className="btn primario" type="submit" disabled={salvando}>
-                {salvando
-                  ? "Salvando..."
-                  : editandoId === null
-                    ? "Lançar despesa"
-                    : "Salvar"}
+                <span className="form-mais-sinal">{detalhes ? "−" : "+"}</span>
+                Fornecedor, nota, forma de pagamento
               </button>
-              <button type="button" className="btn secundario" onClick={fecharModal}>
+
+              {detalhes && (
+                <div className="form-mais-conteudo">
+                  <div className="grid-2">
+                    <label>
+                      Forma de pagamento
+                      <select
+                        value={form.forma_pagamento ?? ""}
+                        onChange={(e) => setCampo("forma_pagamento", e.target.value)}
+                      >
+                        <option value="">Não informada</option>
+                        {FORMAS_PAGAMENTO.map((f) => (
+                          <option key={f.valor} value={f.valor}>
+                            {f.rotulo}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Nota / recibo
+                      <input
+                        value={form.documento ?? ""}
+                        onChange={(e) => setCampo("documento", e.target.value)}
+                        placeholder="Opcional"
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ marginBottom: "1rem" }}>
+                    Fornecedor / prestador
+                    <select
+                      value={form.fornecedor_id ?? ""}
+                      onChange={(e) =>
+                        setCampo(
+                          "fornecedor_id",
+                          e.target.value ? Number(e.target.value) : null
+                        )
+                      }
+                    >
+                      <option value="">Nenhum</option>
+                      {fornecedores.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={{ marginBottom: "1rem" }}>
+                    Observação
+                    <textarea
+                      value={form.observacao ?? ""}
+                      onChange={(e) => setCampo("observacao", e.target.value)}
+                      rows={2}
+                      placeholder="Opcional"
+                    />
+                  </label>
+
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={form.operacional ?? true}
+                      onChange={(e) => {
+                        setOperacionalTocado(true);
+                        setCampo("operacional", e.target.checked);
+                      }}
+                    />
+                    Entra na apuração do resultado
+                  </label>
+                  <p className="subtitle" style={{ marginTop: "-0.5rem" }}>
+                    A categoria já define isto. Desmarque só se for retirada do dono
+                    ou compra de bem: saem dinheiro, mas não são despesa do período.
+                  </p>
+                </div>
+              )}
+
+              <div className="form-acoes">
+                <button
+                  className="btn primario"
+                  type="submit"
+                  disabled={salvando || (tipo === "fixa" && !edicao && mesesGerados < 1)}
+                >
+                  {salvando
+                    ? "Salvando..."
+                    : edicao
+                      ? "Salvar"
+                      : tipo === "fixa"
+                        ? mesesGerados > 0
+                          ? `Lançar ${mesesGerados} ${mesesGerados === 1 ? "mês" : "meses"}`
+                          : "Lançar despesa fixa"
+                        : "Lançar despesa"}
+                </button>
+                <button type="button" className="btn secundario" onClick={fecharModal}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {pedidoEscopo && (
+        <div className="recibo-overlay" onClick={() => responderEscopo(null)}>
+          <div
+            className="modal-box modal-confirm"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <h2>
+              {pedidoEscopo.acao === "excluir"
+                ? "Remover qual alcance?"
+                : "Aplicar em qual alcance?"}
+            </h2>
+            <p className="muted" style={{ marginTop: "0.35rem" }}>
+              Esta despesa é fixa mensal. Os meses já passados não são alterados.
+            </p>
+            <div className="escopo-acoes">
+              <button
+                type="button"
+                className={`btn ${pedidoEscopo.acao === "excluir" ? "perigo" : "primario"}`}
+                onClick={() => responderEscopo("esta")}
+                autoFocus
+              >
+                Só este mês
+              </button>
+              <button
+                type="button"
+                className={`btn ${pedidoEscopo.acao === "excluir" ? "perigo" : "primario"}`}
+                onClick={() => responderEscopo("esta_e_proximas")}
+              >
+                Este mês e os próximos
+              </button>
+              <button
+                type="button"
+                className="btn secundario"
+                onClick={() => responderEscopo(null)}
+              >
                 Cancelar
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
     </div>

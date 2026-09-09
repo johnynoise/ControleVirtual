@@ -26,15 +26,89 @@ function dataHoraBR(iso: string | null | undefined): string {
   return d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+/**
+ * Recorte do relatório. O mês é o padrão porque é o fechamento que o contador
+ * usa mês a mês (apuração do Simples, carnê-leão, relatório do MEI); o ano
+ * serve para a declaração e o trimestre para quem apura por trimestre.
+ */
+type Recorte = "mes" | "trimestre" | "ano" | "intervalo";
+
+const MESES = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+];
+
+/** YYYY-MM-DD a partir de ano / mês (1-12) / dia. */
+function isoData(ano: number, mes: number, dia: number): string {
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+/** Último dia do mês (dia 0 do mês seguinte). */
+function ultimoDia(ano: number, mes: number): number {
+  return new Date(ano, mes, 0).getDate();
+}
+
+/** Intervalo fechado de um mês-calendário. */
+function intervaloMes(ano: number, mes: number) {
+  return {
+    inicio: isoData(ano, mes, 1),
+    fim: isoData(ano, mes, ultimoDia(ano, mes)),
+  };
+}
+
+/** Intervalo fechado de um trimestre (1 a 4). */
+function intervaloTrimestre(ano: number, trimestre: number) {
+  const primeiro = (trimestre - 1) * 3 + 1;
+  const ultimo = primeiro + 2;
+  return {
+    inicio: isoData(ano, primeiro, 1),
+    fim: isoData(ano, ultimo, ultimoDia(ano, ultimo)),
+  };
+}
+
 export default function RelatorioFiscalPage() {
-  const anoAtual = new Date().getFullYear();
+  const hoje = new Date();
+  const anoAtual = hoje.getFullYear();
+  const mesAtual = hoje.getMonth() + 1;
   const [anos, setAnos] = useState<number[]>([anoAtual]);
+  const [recorte, setRecorte] = useState<Recorte>("mes");
   const [ano, setAno] = useState(anoAtual);
+  const [mes, setMes] = useState(mesAtual);
+  const [trimestre, setTrimestre] = useState(Math.floor(hoje.getMonth() / 3) + 1);
+  const [inicio, setInicio] = useState(isoData(anoAtual, mesAtual, 1));
+  const [fim, setFim] = useState(isoData(anoAtual, mesAtual, hoje.getDate()));
   const [dados, setDados] = useState<RelatorioFiscal | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
-  const periodo = useMemo<PeriodoFiscal>(() => ({ ano }), [ano]);
+  const intervaloInvalido =
+    recorte === "intervalo" && Boolean(inicio && fim && inicio > fim);
+
+  // Nulo enquanto o intervalo digitado está incompleto ou invertido: aí o
+  // relatório não recarrega e a tela avisa, em vez de bater na API para receber
+  // um erro de validação.
+  const periodo = useMemo<PeriodoFiscal | null>(() => {
+    switch (recorte) {
+      case "mes":
+        return intervaloMes(ano, mes);
+      case "trimestre":
+        return intervaloTrimestre(ano, trimestre);
+      case "ano":
+        return { ano };
+      case "intervalo":
+        return !inicio || !fim || inicio > fim ? null : { inicio, fim };
+    }
+  }, [recorte, ano, mes, trimestre, inicio, fim]);
 
   useEffect(() => {
     listarAnosFiscais()
@@ -47,6 +121,7 @@ export default function RelatorioFiscalPage() {
   }, []);
 
   useEffect(() => {
+    if (periodo === null) return;
     let ativo = true;
     setCarregando(true);
     setErro(null);
@@ -60,6 +135,9 @@ export default function RelatorioFiscalPage() {
   }, [periodo]);
 
   const r = dados;
+  // Num recorte de um mês só, a tabela mensal repetiria o total; o título muda
+  // para não prometer uma série que não existe.
+  const variosMeses = (r?.receita.por_mes.length ?? 0) > 1;
 
   return (
     <div className="page">
@@ -71,16 +149,83 @@ export default function RelatorioFiscalPage() {
             <div className="fiscal-acoes">
               <select
                 className="filtro-select"
-                value={ano}
-                onChange={(e) => setAno(Number(e.target.value))}
-                aria-label="Ano-calendário"
+                value={recorte}
+                onChange={(e) => setRecorte(e.target.value as Recorte)}
+                aria-label="Recorte do período"
               >
-                {anos.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
+                <option value="mes">Mês</option>
+                <option value="trimestre">Trimestre</option>
+                <option value="ano">Ano inteiro</option>
+                <option value="intervalo">Intervalo</option>
               </select>
+
+              {recorte === "mes" && (
+                <select
+                  className="filtro-select"
+                  value={mes}
+                  onChange={(e) => setMes(Number(e.target.value))}
+                  aria-label="Mês"
+                >
+                  {MESES.map((nome, i) => (
+                    <option key={nome} value={i + 1}>
+                      {nome}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {recorte === "trimestre" && (
+                <select
+                  className="filtro-select"
+                  value={trimestre}
+                  onChange={(e) => setTrimestre(Number(e.target.value))}
+                  aria-label="Trimestre"
+                >
+                  <option value={1}>1º tri (jan-mar)</option>
+                  <option value={2}>2º tri (abr-jun)</option>
+                  <option value={3}>3º tri (jul-set)</option>
+                  <option value={4}>4º tri (out-dez)</option>
+                </select>
+              )}
+
+              {recorte !== "intervalo" && (
+                <select
+                  className="filtro-select"
+                  value={ano}
+                  onChange={(e) => setAno(Number(e.target.value))}
+                  aria-label="Ano-calendário"
+                >
+                  {anos.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {recorte === "intervalo" && (
+                <div className="periodo-intervalo">
+                  <label>
+                    De
+                    <input
+                      type="date"
+                      value={inicio}
+                      max={fim || undefined}
+                      onChange={(e) => setInicio(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    até
+                    <input
+                      type="date"
+                      value={fim}
+                      min={inicio || undefined}
+                      onChange={(e) => setFim(e.target.value)}
+                    />
+                  </label>
+                </div>
+              )}
+
               <button
                 className="btn secundario pequeno"
                 onClick={() => r && baixarCsvFiscal(r)}
@@ -100,12 +245,18 @@ export default function RelatorioFiscalPage() {
         />
 
         {erro && <div className="alert erro">{erro}</div>}
+        {intervaloInvalido && (
+          <div className="alert erro">
+            A data final do período não pode ser anterior à inicial.
+          </div>
+        )}
 
         <p className="subtitle">
-          Consolidado do ano para levar ao contador: receita, custo da
-          mercadoria, compras, despesas, estoque e contas a receber. Não calcula
-          imposto — o enquadramento e a apuração dependem do seu regime
-          tributário.
+          Consolidado do período para levar ao contador: receita, custo da
+          mercadoria, compras, despesas, estoque e contas a receber. O mês
+          fechado é o recorte que o contador usa na apuração; o ano serve para a
+          declaração. Não calcula imposto — o enquadramento e a apuração
+          dependem do seu regime tributário.
         </p>
       </div>
 
@@ -243,7 +394,7 @@ export default function RelatorioFiscalPage() {
 
           {/* 2. Receita */}
           <div className="card">
-            <h2>Receita mês a mês</h2>
+            <h2>{variosMeses ? "Receita mês a mês" : "Receita do período"}</h2>
             <p className="subtitle">
               <strong>Competência</strong> é a data da venda; <strong>caixa</strong>{" "}
               é a data em que o dinheiro entrou. Numa venda à vista as duas
@@ -269,22 +420,25 @@ export default function RelatorioFiscalPage() {
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td>
-                    <strong>Total</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{r.receita.num_vendas}</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{brl(r.receita.total_competencia)}</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{brl(r.receita.total_caixa)}</strong>
-                  </td>
-                </tr>
-              </tfoot>
+              {/* Com um mês só, o total repetiria a única linha. */}
+              {variosMeses && (
+                <tfoot>
+                  <tr>
+                    <td>
+                      <strong>Total</strong>
+                    </td>
+                    <td className="num">
+                      <strong>{r.receita.num_vendas}</strong>
+                    </td>
+                    <td className="num">
+                      <strong>{brl(r.receita.total_competencia)}</strong>
+                    </td>
+                    <td className="num">
+                      <strong>{brl(r.receita.total_caixa)}</strong>
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
 
             <div className="kpis fiscal-kpis">

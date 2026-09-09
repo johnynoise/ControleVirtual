@@ -3,6 +3,8 @@ import type {
   CategoriaDespesaOpcao,
   Despesa,
   DespesaCreate,
+  DespesaLoteCriada,
+  EscopoRecorrencia,
   FiltrosDespesa,
   ResumoDespesas,
 } from "../types";
@@ -24,16 +26,24 @@ export async function listarCategoriasDespesa(): Promise<CategoriaDespesaOpcao[]
   return data;
 }
 
-export async function criarDespesa(dados: DespesaCreate): Promise<Despesa> {
-  const { data } = await api.post<Despesa>("/despesas", dados);
+/**
+ * Lança a despesa. Avulsa devolve um lançamento; fixa mensal devolve um por
+ * mês, do mês da competência até o limite da repetição.
+ */
+export async function criarDespesa(dados: DespesaCreate): Promise<DespesaLoteCriada> {
+  const { data } = await api.post<DespesaLoteCriada>("/despesas", dados);
   return data;
 }
 
+/** Edita a despesa. Com escopo "esta_e_proximas", alcança os meses seguintes. */
 export async function atualizarDespesa(
   id: number,
-  dados: DespesaCreate
+  dados: DespesaCreate,
+  escopo: EscopoRecorrencia = "esta"
 ): Promise<Despesa> {
-  const { data } = await api.put<Despesa>(`/despesas/${id}`, dados);
+  const { data } = await api.put<Despesa>(`/despesas/${id}`, dados, {
+    params: { escopo },
+  });
   return data;
 }
 
@@ -48,6 +58,16 @@ export async function pagarDespesa(
   return data;
 }
 
-export async function removerDespesa(id: number): Promise<void> {
-  await api.delete(`/despesas/${id}`);
+/**
+ * Remove a despesa e devolve quantos lançamentos foram apagados. Com escopo
+ * "esta_e_proximas", leva também os meses seguintes do mesmo grupo.
+ */
+export async function removerDespesa(
+  id: number,
+  escopo: EscopoRecorrencia = "esta"
+): Promise<number> {
+  const { data } = await api.delete<{ removidas: number }>(`/despesas/${id}`, {
+    params: { escopo },
+  });
+  return data.removidas;
 }

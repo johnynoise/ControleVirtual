@@ -1203,7 +1203,13 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  /* Com o recorte (mês/trimestre/ano/intervalo) a barra fica longa: em tela
+     estreita ela quebra em vez de espremer os seletores. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
+
+
 
 .fiscal-cabecalho {
   display: flex;
@@ -4176,6 +4182,131 @@ kbd {
 
 .estado-erro .btn {
   margin-top: 0.65rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lançamento de despesa: escolha do tipo e campos opcionais           */
+/* ------------------------------------------------------------------ */
+
+/* Primeiro passo do modal: avulsa ou fixa mensal. */
+.despesa-tipos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.despesa-tipo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  background: var(--surface);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.despesa-tipo:hover,
+.despesa-tipo:focus-visible {
+  border-color: var(--azul);
+  background: var(--azul-suave);
+}
+
+.despesa-tipo-titulo {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.despesa-tipo-desc {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* Volta ao passo da escolha do tipo. */
+.trocar-tipo {
+  align-self: flex-start;
+  margin: -0.35rem 0 0.9rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--azul);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trocar-tipo:hover {
+  text-decoration: underline;
+}
+
+/* Prévia de quantos lançamentos a despesa fixa vai gerar. */
+.previa-fixa {
+  margin: 0 0 1.1rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--raio-sm);
+  background: var(--azul-suave);
+  color: var(--text);
+  font-size: 0.87rem;
+  line-height: 1.5;
+}
+
+/* Sanfona dos campos opcionais. */
+.form-mais {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form-mais:hover {
+  color: var(--azul);
+}
+
+.form-mais-sinal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.form-mais-conteudo {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Escolha do alcance ao mexer num mês de despesa fixa. */
+.escopo-acoes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+}
+
+@media (max-width: 560px) {
+  .despesa-tipos {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ================================================================== */

@@ -70,8 +70,15 @@ class Despesa(Base):
     # é o lojista com o contador; aqui é só a marcação.
     operacional = Column(Boolean, nullable=False, default=True, server_default="1")
 
-    # Marcação informativa de despesa que se repete todo mês (aluguel, internet).
+    # Marca a despesa fixa mensal (aluguel, internet). Ao lançar uma despesa
+    # fixa, a API gera um lançamento por mês até o limite escolhido — cada mês
+    # é uma linha própria, com a sua competência e o seu pagamento.
     recorrente = Column(Boolean, nullable=False, default=False, server_default="0")
+
+    # Identificador que costura os lançamentos gerados a partir do mesmo cadastro
+    # de despesa fixa. É o que permite editar ou remover "esta e as próximas".
+    # Nulo nas despesas avulsas.
+    grupo_recorrencia = Column(String(36), nullable=True, index=True)
 
     observacao = Column(Text, nullable=True)
 

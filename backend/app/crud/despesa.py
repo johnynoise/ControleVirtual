@@ -4,9 +4,11 @@ As agregações do resumo são feitas em Python, seguindo o mesmo critério do
 ``crud/relatorio.py``: mantém o código agnóstico de banco (SQLite ou
 PostgreSQL) e é adequado ao volume de uma loja local.
 """
+from calendar import monthrange
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,14 @@ from app.models.fornecedor import Fornecedor
 from app.schemas.despesa import DespesaCreate, DespesaUpdate, rotulo_categoria
 
 _CENTAVOS = Decimal("0.01")
+
+# Teto de segurança da geração de despesa fixa: cinco anos de lançamentos.
+# Evita que um "repetir até 2099" digitado por engano encha a tabela.
+MAX_RECORRENCIAS = 60
+
+# Campos que nunca são copiados para os meses seguintes ao editar "esta e as
+# próximas": cada lançamento tem a sua competência e o seu próprio pagamento.
+_CAMPOS_LOCAIS = frozenset({"data_competencia", "data_pagamento"})
 
 _MESES_ABREV = [
     "jan",
@@ -117,19 +127,100 @@ def _resolver_fornecedor(db: Session, fornecedor_id: int | None) -> str | None:
     return fornecedor.nome
 
 
-def criar(db: Session, dados: DespesaCreate) -> Despesa:
-    valores = dados.model_dump()
+def _avancar_meses(referencia: date, meses: int) -> date:
+    """Mesma data N meses adiante, encurtando o dia em mês curto.
+
+    Dia 31 em fevereiro vira 28 (ou 29), como esperado para um vencimento
+    mensal — e volta a 31 nos meses que têm 31 dias, porque o cálculo parte
+    sempre da data original.
+    """
+    total = referencia.month - 1 + meses
+    ano = referencia.year + total // 12
+    mes = total % 12 + 1
+    return date(ano, mes, min(referencia.day, monthrange(ano, mes)[1]))
+
+
+def _meses_da_recorrencia(inicio: date, ate: date) -> list[date]:
+    """Datas de competência de uma despesa fixa, do mês inicial ao final.
+
+    A comparação é por ano/mês: "repetir até dezembro" inclui dezembro inteiro,
+    não importa o dia informado no limite.
+    """
+    limite = (ate.year, ate.month)
+    datas: list[date] = []
+    for i in range(MAX_RECORRENCIAS):
+        atual = _avancar_meses(inicio, i)
+        if (atual.year, atual.month) > limite:
+            break
+        datas.append(atual)
+    return datas
+
+
+def criar(db: Session, dados: DespesaCreate) -> list[Despesa]:
+    """Lança a despesa e devolve as linhas criadas.
+
+    Despesa avulsa gera uma linha. Despesa fixa mensal gera uma linha por mês,
+    do mês da competência até ``repetir_ate`` (por padrão, dezembro do mesmo
+    ano), todas costuradas pelo mesmo ``grupo_recorrencia``.
+    """
+    valores = dados.model_dump(exclude={"repetir_ate"})
     valores["categoria"] = dados.categoria.value
     valores["fornecedor_nome"] = _resolver_fornecedor(db, dados.fornecedor_id)
 
-    despesa = Despesa(**valores)
-    db.add(despesa)
+    if not dados.recorrente:
+        despesa = Despesa(**valores)
+        db.add(despesa)
+        db.commit()
+        db.refresh(despesa)
+        return [despesa]
+
+    fim = dados.repetir_ate or date(dados.data_competencia.year, 12, 31)
+    grupo = uuid4().hex
+    criadas: list[Despesa] = []
+
+    for indice, competencia in enumerate(_meses_da_recorrencia(dados.data_competencia, fim)):
+        linha = dict(valores)
+        linha["data_competencia"] = competencia
+        # Só o primeiro mês pode nascer pago: os seguintes ainda não venceram.
+        linha["data_pagamento"] = valores["data_pagamento"] if indice == 0 else None
+        linha["grupo_recorrencia"] = grupo
+        despesa = Despesa(**linha)
+        db.add(despesa)
+        criadas.append(despesa)
+
     db.commit()
-    db.refresh(despesa)
-    return despesa
+    for despesa in criadas:
+        db.refresh(despesa)
+    return criadas
 
 
-def atualizar(db: Session, despesa: Despesa, dados: DespesaUpdate) -> Despesa:
+def proximas_do_grupo(db: Session, despesa: Despesa) -> list[Despesa]:
+    """Lançamentos do mesmo grupo com competência posterior a esta.
+
+    Lista vazia quando a despesa é avulsa ou é o último mês do grupo. Os meses
+    anteriores ficam de fora de propósito: histórico já fechado não se reescreve.
+    """
+    if not despesa.grupo_recorrencia:
+        return []
+    return (
+        db.query(Despesa)
+        .filter(
+            Despesa.grupo_recorrencia == despesa.grupo_recorrencia,
+            Despesa.data_competencia > despesa.data_competencia,
+            Despesa.id != despesa.id,
+        )
+        .order_by(Despesa.data_competencia)
+        .all()
+    )
+
+
+def atualizar(
+    db: Session,
+    despesa: Despesa,
+    dados: DespesaUpdate,
+    escopo: str = "esta",
+) -> Despesa:
+    """Aplica as alterações na despesa e, se pedido, nos meses seguintes."""
     alteracoes = dados.model_dump(exclude_unset=True)
 
     if "categoria" in alteracoes and dados.categoria is not None:
@@ -140,14 +231,29 @@ def atualizar(db: Session, despesa: Despesa, dados: DespesaUpdate) -> Despesa:
 
     for campo, valor in alteracoes.items():
         setattr(despesa, campo, valor)
+
+    if escopo == "esta_e_proximas":
+        propagaveis = {k: v for k, v in alteracoes.items() if k not in _CAMPOS_LOCAIS}
+        if propagaveis:
+            for irma in proximas_do_grupo(db, despesa):
+                for campo, valor in propagaveis.items():
+                    setattr(irma, campo, valor)
+
     db.commit()
     db.refresh(despesa)
     return despesa
 
 
-def remover(db: Session, despesa: Despesa) -> None:
+def remover(db: Session, despesa: Despesa, escopo: str = "esta") -> int:
+    """Remove a despesa (e os meses seguintes, se pedido). Devolve a contagem."""
+    removidas = 1
+    if escopo == "esta_e_proximas":
+        for irma in proximas_do_grupo(db, despesa):
+            db.delete(irma)
+            removidas += 1
     db.delete(despesa)
     db.commit()
+    return removidas
 
 
 def marcar_paga(db: Session, despesa: Despesa, data_pagamento: date | None = None) -> Despesa:

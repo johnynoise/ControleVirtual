@@ -50,6 +50,10 @@ def _migrar_colunas() -> None:
         "produtos": {
             "preco_venda_prazo": "NUMERIC(12, 2)",
         },
+        # Costura os meses gerados a partir de uma despesa fixa mensal.
+        "despesas": {
+            "grupo_recorrencia": "VARCHAR(36)",
+        },
         "devolucoes": {
             "defeito": "BOOLEAN NOT NULL DEFAULT '0'",
             "status_fornecedor": "VARCHAR(20)",
