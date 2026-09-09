@@ -19,15 +19,14 @@ from app.schemas.relatorio import (
     MaisVendidos,
     RelatorioClientesInativos,
     RelatorioComprasFornecedor,
-    RelatorioCurvaAbc,
     RelatorioDescontos,
     RelatorioFormaPagamento,
     RelatorioKardex,
     RelatorioPerdas,
+    RelatorioProdutosFaturamento,
     RelatorioRankingClientes,
     RelatorioResultado,
     RelatorioSaudeEstoque,
-    RelatorioVendasCategoria,
     RelatorioVendasDiaHorario,
     ResumoEstoque,
     ResumoPeriodo,
@@ -132,11 +131,16 @@ def relatorio_forma_pagamento(
     return crud_relatorio.vendas_por_forma_pagamento(db, periodo)
 
 
-@router.get("/curva-abc", response_model=RelatorioCurvaAbc)
-def relatorio_curva_abc(
+@router.get("/produtos-faturamento", response_model=RelatorioProdutosFaturamento)
+def relatorio_produtos_faturamento(
     periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
 ):
-    return crud_relatorio.curva_abc(db, periodo)
+    """De onde vem o faturamento, por produto (com curva ABC) e por categoria.
+
+    Substitui os antigos ``/curva-abc`` e ``/vendas-categoria``: eram a mesma
+    medida em dois grãos, e só um deles trazia o lucro.
+    """
+    return crud_relatorio.produtos_faturamento(db, periodo)
 
 
 @router.get("/saude-estoque", response_model=RelatorioSaudeEstoque)
@@ -188,13 +192,6 @@ def relatorio_descontos(
     periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
 ):
     return crud_relatorio.descontos(db, periodo)
-
-
-@router.get("/vendas-categoria", response_model=RelatorioVendasCategoria)
-def relatorio_vendas_categoria(
-    periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
-):
-    return crud_relatorio.vendas_por_categoria(db, periodo)
 
 
 @router.get("/perdas", response_model=RelatorioPerdas)

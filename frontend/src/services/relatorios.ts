@@ -61,9 +61,9 @@ export async function obterResumoEstoque(): Promise<ResumoEstoque> {
 // --- Seção "Relatórios" ---
 import type {
   RelatorioComprasFornecedor,
-  RelatorioCurvaAbc,
   RelatorioFormaPagamento,
   RelatorioKardex,
+  RelatorioProdutosFaturamento,
   RelatorioRankingClientes,
   RelatorioSaudeEstoque,
 } from "../types";
@@ -78,12 +78,17 @@ export async function obterFormaPagamento(
   return data;
 }
 
-export async function obterCurvaAbc(
+/**
+ * De onde vem o faturamento, por produto (com curva ABC) e por categoria.
+ * Substitui `obterCurvaAbc` e `obterVendasCategoria`.
+ */
+export async function obterProdutosFaturamento(
   periodo: PeriodoRelatorio
-): Promise<RelatorioCurvaAbc> {
-  const { data } = await api.get<RelatorioCurvaAbc>("/relatorios/curva-abc", {
-    params: params(periodo),
-  });
+): Promise<RelatorioProdutosFaturamento> {
+  const { data } = await api.get<RelatorioProdutosFaturamento>(
+    "/relatorios/produtos-faturamento",
+    { params: params(periodo) }
+  );
   return data;
 }
 
@@ -137,7 +142,6 @@ import type {
   RelatorioClientesInativos,
   RelatorioDescontos,
   RelatorioPerdas,
-  RelatorioVendasCategoria,
   RelatorioVendasDiaHorario,
 } from "../types";
 
@@ -157,16 +161,6 @@ export async function obterDescontos(
   const { data } = await api.get<RelatorioDescontos>("/relatorios/descontos", {
     params: params(periodo),
   });
-  return data;
-}
-
-export async function obterVendasCategoria(
-  periodo: PeriodoRelatorio
-): Promise<RelatorioVendasCategoria> {
-  const { data } = await api.get<RelatorioVendasCategoria>(
-    "/relatorios/vendas-categoria",
-    { params: params(periodo) }
-  );
   return data;
 }
 

@@ -285,11 +285,18 @@ def vendas_por_forma_pagamento(db: Session, periodo: Periodo) -> dict:
     }
 
 
-def curva_abc(db: Session, periodo: Periodo) -> dict:
-    """Curva ABC de produtos por faturamento no período.
+def produtos_faturamento(db: Session, periodo: Periodo) -> dict:
+    """De onde vem o faturamento, por produto e por categoria.
 
-    Classe A: produtos que somam até 80% do faturamento acumulado.
-    Classe B: de 80% a 95%. Classe C: os demais.
+    Os dois grãos respondem à mesma pergunta ("o que puxa o meu faturamento")
+    e saem da mesma varredura dos itens vendidos, então vêm juntos: a tela
+    troca de grão numa aba, sem pedir outro relatório.
+
+    Em ``por_produto`` cada linha recebe a classe da curva ABC — A são os
+    produtos que somam até 80% do faturamento acumulado, B de 80% a 95%, C o
+    resto. Diferente do relatório anterior, a classificação vem acompanhada do
+    lucro e da margem: faturar muito com margem baixa não é a mesma coisa que
+    faturar muito com margem boa, e a classe sozinha não contava isso.
     """
     itens = (
         db.query(ItemVenda)
@@ -304,36 +311,64 @@ def curva_abc(db: Session, periodo: Periodo) -> dict:
         .all()
     )
 
+    # Mapa produto_id -> (categoria_id, categoria_nome) em uma query.
+    mapa_categoria: dict[int, tuple[int, str]] = {
+        pid: (cid, cnome)
+        for pid, cid, cnome in db.query(
+            Produto.id, Categoria.id, Categoria.nome
+        ).join(Categoria, Produto.categoria_id == Categoria.id)
+    }
+
     agregado: dict = {}
+    por_categoria: dict = {}
     for item in itens:
+        lucro_item = (item.preco_unitario - item.custo_unitario) * item.quantidade
+        subtotal = item.subtotal or 0
+
         chave = item.produto_id if item.produto_id is not None else f"nome:{item.produto_nome}"
+        cat = mapa_categoria.get(item.produto_id) if item.produto_id else None
         registro = agregado.setdefault(
             chave,
             {
                 "produto_id": item.produto_id,
                 "produto_nome": item.produto_nome,
+                "categoria_nome": cat[1] if cat else "Sem categoria",
                 "quantidade": 0,
                 "faturamento": Decimal("0"),
+                "lucro": Decimal("0"),
             },
         )
         registro["quantidade"] += item.quantidade
-        registro["faturamento"] += item.subtotal or 0
+        registro["faturamento"] += subtotal
+        registro["lucro"] += lucro_item
+
+        chave_cat = cat[0] if cat else "sem"
+        registro_cat = por_categoria.setdefault(
+            chave_cat,
+            {
+                "categoria_id": cat[0] if cat else None,
+                "categoria_nome": cat[1] if cat else "Sem categoria",
+                "quantidade": 0,
+                "faturamento": Decimal("0"),
+                "lucro": Decimal("0"),
+            },
+        )
+        registro_cat["quantidade"] += item.quantidade
+        registro_cat["faturamento"] += subtotal
+        registro_cat["lucro"] += lucro_item
 
     lista = sorted(agregado.values(), key=lambda r: r["faturamento"], reverse=True)
     faturamento_total = sum((r["faturamento"] for r in lista), Decimal("0"))
+    lucro_total = sum((r["lucro"] for r in lista), Decimal("0"))
 
     acumulado = Decimal("0")
-    linhas: list[dict] = []
+    linhas_produto: list[dict] = []
     contagem = {"A": 0, "B": 0, "C": 0}
     for r in lista:
         fat = _q(r["faturamento"])
+        lucro = _q(r["lucro"])
         acumulado += r["faturamento"]
-        pct = (fat / faturamento_total * 100).quantize(_CENTAVOS) if faturamento_total > 0 else Decimal("0.00")
-        pct_acum = (
-            (acumulado / faturamento_total * 100).quantize(_CENTAVOS)
-            if faturamento_total > 0
-            else Decimal("0.00")
-        )
+        pct_acum = _pct(acumulado, faturamento_total)
         if pct_acum <= Decimal("80"):
             classe = "A"
         elif pct_acum <= Decimal("95"):
@@ -341,27 +376,46 @@ def curva_abc(db: Session, periodo: Periodo) -> dict:
         else:
             classe = "C"
         contagem[classe] += 1
-        linhas.append(
+        linhas_produto.append(
             {
                 "produto_id": r["produto_id"],
                 "produto_nome": r["produto_nome"],
+                "categoria_nome": r["categoria_nome"],
                 "quantidade": r["quantidade"],
                 "faturamento": fat,
-                "percentual": pct,
+                "lucro": lucro,
+                "margem_percentual": _pct(lucro, fat),
+                "percentual": _pct(fat, faturamento_total),
                 "percentual_acumulado": pct_acum,
                 "classe": classe,
             }
         )
+
+    linhas_categoria = [
+        {
+            "categoria_id": r["categoria_id"],
+            "categoria_nome": r["categoria_nome"],
+            "quantidade": r["quantidade"],
+            "faturamento": _q(r["faturamento"]),
+            "lucro": _q(r["lucro"]),
+            "margem_percentual": _pct(_q(r["lucro"]), _q(r["faturamento"])),
+            "percentual": _pct(_q(r["faturamento"]), faturamento_total),
+        }
+        for r in por_categoria.values()
+    ]
+    linhas_categoria.sort(key=lambda x: x["faturamento"], reverse=True)
 
     return {
         "dias": periodo.dias,
         "inicio": periodo.inicio_data,
         "fim": periodo.fim_data,
         "faturamento_total": _q(faturamento_total),
+        "lucro_total": _q(lucro_total),
         "qtd_classe_a": contagem["A"],
         "qtd_classe_b": contagem["B"],
         "qtd_classe_c": contagem["C"],
-        "linhas": linhas,
+        "por_produto": linhas_produto,
+        "por_categoria": linhas_categoria,
     }
 
 
@@ -764,75 +818,6 @@ def descontos(db: Session, periodo: Periodo) -> dict:
         "total_bruto": total_bruto,
         "total_desconto": total_desconto,
         "percentual_medio": pct_medio,
-        "linhas": linhas,
-    }
-
-
-def vendas_por_categoria(db: Session, periodo: Periodo) -> dict:
-    """Agrega faturamento, lucro e quantidade por categoria de produto."""
-    itens = (
-        db.query(ItemVenda)
-        .join(Venda, ItemVenda.venda_id == Venda.id)
-        .filter(
-            Venda.criado_em >= periodo.inicio,
-            Venda.criado_em <= periodo.fim,
-            Venda.cancelada_em.is_(None),
-            func.coalesce(Venda.entrega_status, "") != "pendente",
-            ItemVenda.quantidade > 0,
-        )
-        .all()
-    )
-
-    # Mapa produto_id -> (categoria_id, categoria_nome) em uma query.
-    mapa_categoria: dict[int, tuple[int, str]] = {
-        pid: (cid, cnome)
-        for pid, cid, cnome in db.query(
-            Produto.id, Categoria.id, Categoria.nome
-        ).join(Categoria, Produto.categoria_id == Categoria.id)
-    }
-
-    agregado: dict = {}
-    for item in itens:
-        cat = mapa_categoria.get(item.produto_id) if item.produto_id else None
-        chave = cat[0] if cat else "sem"
-        nome = cat[1] if cat else "Sem categoria"
-        registro = agregado.setdefault(
-            chave,
-            {
-                "categoria_id": cat[0] if cat else None,
-                "categoria_nome": nome,
-                "quantidade": 0,
-                "faturamento": Decimal("0"),
-                "lucro": Decimal("0"),
-            },
-        )
-        registro["quantidade"] += item.quantidade
-        registro["faturamento"] += item.subtotal or 0
-        registro["lucro"] += (item.preco_unitario - item.custo_unitario) * item.quantidade
-
-    faturamento_total = sum((r["faturamento"] for r in agregado.values()), Decimal("0"))
-
-    linhas = []
-    for r in agregado.values():
-        fat = _q(r["faturamento"])
-        pct = (fat / faturamento_total * 100).quantize(_CENTAVOS) if faturamento_total > 0 else Decimal("0.00")
-        linhas.append(
-            {
-                "categoria_id": r["categoria_id"],
-                "categoria_nome": r["categoria_nome"],
-                "quantidade": r["quantidade"],
-                "faturamento": fat,
-                "lucro": _q(r["lucro"]),
-                "percentual": pct,
-            }
-        )
-
-    linhas.sort(key=lambda x: x["faturamento"], reverse=True)
-    return {
-        "dias": periodo.dias,
-        "inicio": periodo.inicio_data,
-        "fim": periodo.fim_data,
-        "faturamento_total": _q(faturamento_total),
         "linhas": linhas,
     }
 

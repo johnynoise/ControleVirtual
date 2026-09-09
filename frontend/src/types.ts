@@ -519,25 +519,42 @@ export interface RelatorioFormaPagamento {
   linhas: FormaPagamentoLinha[];
 }
 
-export interface CurvaAbcLinha {
+export interface ProdutoFaturamentoLinha {
   produto_id: number | null;
   produto_nome: string;
+  categoria_nome: string;
   quantidade: number;
   faturamento: string;
+  lucro: string;
+  margem_percentual: string;
   percentual: string;
   percentual_acumulado: string;
+  /** Classe da curva ABC: A concentra até 80% do faturamento acumulado. */
   classe: "A" | "B" | "C";
 }
 
-export interface RelatorioCurvaAbc {
+export interface CategoriaFaturamentoLinha {
+  categoria_id: number | null;
+  categoria_nome: string;
+  quantidade: number;
+  faturamento: string;
+  lucro: string;
+  margem_percentual: string;
+  percentual: string;
+}
+
+/** De onde vem o faturamento, nos dois grãos: produto e categoria. */
+export interface RelatorioProdutosFaturamento {
   dias: number;
   inicio: string;
   fim: string;
   faturamento_total: string;
+  lucro_total: string;
   qtd_classe_a: number;
   qtd_classe_b: number;
   qtd_classe_c: number;
-  linhas: CurvaAbcLinha[];
+  por_produto: ProdutoFaturamentoLinha[];
+  por_categoria: CategoriaFaturamentoLinha[];
 }
 
 /** Situação do produto na saúde do estoque; define a aba onde ele aparece. */
@@ -684,22 +701,7 @@ export interface RelatorioDescontos {
   linhas: DescontoLinha[];
 }
 
-export interface CategoriaLinha {
-  categoria_id: number | null;
-  categoria_nome: string;
-  quantidade: number;
-  faturamento: string;
-  lucro: string;
-  percentual: string;
-}
 
-export interface RelatorioVendasCategoria {
-  dias: number;
-  inicio: string;
-  fim: string;
-  faturamento_total: string;
-  linhas: CategoriaLinha[];
-}
 
 export interface PerdaLinha {
   id: number;

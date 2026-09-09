@@ -23,14 +23,13 @@ const DespesasPage = lazy(() => import("./pages/DespesasPage"));
 const RelatoriosPage = lazy(() => import("./pages/RelatoriosPage"));
 const ResultadoPage = lazy(() => import("./pages/relatorios/ResultadoPage"));
 const FormaPagamentoPage = lazy(() => import("./pages/relatorios/FormaPagamentoPage"));
-const CurvaAbcPage = lazy(() => import("./pages/relatorios/CurvaAbcPage"));
+const ProdutosFaturamentoPage = lazy(() => import("./pages/relatorios/ProdutosFaturamentoPage"));
 const SaudeEstoquePage = lazy(() => import("./pages/relatorios/SaudeEstoquePage"));
 const KardexPage = lazy(() => import("./pages/relatorios/KardexPage"));
 const RankingClientesPage = lazy(() => import("./pages/relatorios/RankingClientesPage"));
 const ComprasFornecedorPage = lazy(() => import("./pages/relatorios/ComprasFornecedorPage"));
 const VendasDiaHorarioPage = lazy(() => import("./pages/relatorios/VendasDiaHorarioPage"));
 const DescontosPage = lazy(() => import("./pages/relatorios/DescontosPage"));
-const VendasCategoriaPage = lazy(() => import("./pages/relatorios/VendasCategoriaPage"));
 const PerdasPage = lazy(() => import("./pages/relatorios/PerdasPage"));
 const ClientesInativosPage = lazy(() => import("./pages/relatorios/ClientesInativosPage"));
 const RelatorioFiscalPage = lazy(() => import("./pages/relatorios/RelatorioFiscalPage"));
@@ -177,10 +176,10 @@ function App() {
             }
           />
           <Route
-            path="relatorios/curva-abc"
+            path="relatorios/produtos-faturamento"
             element={
               <Suspense fallback={<Carregando />}>
-                <CurvaAbcPage />
+                <ProdutosFaturamentoPage />
               </Suspense>
             }
           />
@@ -229,14 +228,6 @@ function App() {
             element={
               <Suspense fallback={<Carregando />}>
                 <DescontosPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="relatorios/vendas-categoria"
-            element={
-              <Suspense fallback={<Carregando />}>
-                <VendasCategoriaPage />
               </Suspense>
             }
           />

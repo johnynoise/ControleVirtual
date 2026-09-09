@@ -82,25 +82,42 @@ class RelatorioFormaPagamento(BaseModel):
     linhas: list[FormaPagamentoLinha]
 
 
-class CurvaAbcLinha(BaseModel):
+class ProdutoFaturamentoLinha(BaseModel):
     produto_id: int | None
     produto_nome: str
+    categoria_nome: str
     quantidade: int
     faturamento: Decimal
+    lucro: Decimal
+    margem_percentual: Decimal
     percentual: Decimal
     percentual_acumulado: Decimal
-    classe: str  # "A", "B" ou "C"
+    classe: str  # "A", "B" ou "C" (curva ABC)
 
 
-class RelatorioCurvaAbc(BaseModel):
+class CategoriaFaturamentoLinha(BaseModel):
+    categoria_id: int | None
+    categoria_nome: str
+    quantidade: int
+    faturamento: Decimal
+    lucro: Decimal
+    margem_percentual: Decimal
+    percentual: Decimal
+
+
+class RelatorioProdutosFaturamento(BaseModel):
+    """De onde vem o faturamento, nos dois grãos: produto e categoria."""
+
     dias: int
     inicio: date
     fim: date
     faturamento_total: Decimal
+    lucro_total: Decimal
     qtd_classe_a: int
     qtd_classe_b: int
     qtd_classe_c: int
-    linhas: list[CurvaAbcLinha]
+    por_produto: list[ProdutoFaturamentoLinha]
+    por_categoria: list[CategoriaFaturamentoLinha]
 
 
 class SaudeEstoqueLinha(BaseModel):
@@ -246,23 +263,6 @@ class RelatorioDescontos(BaseModel):
     total_desconto: Decimal
     percentual_medio: Decimal
     linhas: list[DescontoLinha]
-
-
-class CategoriaLinha(BaseModel):
-    categoria_id: int | None
-    categoria_nome: str
-    quantidade: int
-    faturamento: Decimal
-    lucro: Decimal
-    percentual: Decimal
-
-
-class RelatorioVendasCategoria(BaseModel):
-    dias: int
-    inicio: date
-    fim: date
-    faturamento_total: Decimal
-    linhas: list[CategoriaLinha]
 
 
 class PerdaLinha(BaseModel):

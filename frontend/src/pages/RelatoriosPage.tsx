@@ -140,18 +140,14 @@ const GRUPOS: GrupoRelatorio[] = [
     icone: icones.produtos,
     itens: [
       {
-        to: "/relatorios/curva-abc",
-        titulo: "Curva ABC",
-        descricao: "Quais produtos concentram o seu faturamento (regra 80/20).",
+        to: "/relatorios/produtos-faturamento",
+        titulo: "De onde vem o faturamento",
+        descricao:
+          "Produtos e categorias que sustentam a receita, com lucro e margem (curva ABC).",
         disponivel: true,
       },
 
-      {
-        to: "/relatorios/vendas-categoria",
-        titulo: "Vendas por categoria",
-        descricao: "Desempenho de faturamento e lucro por categoria.",
-        disponivel: true,
-      },
+
     ],
   },
   {
