@@ -104,9 +104,9 @@ const GRUPOS: GrupoRelatorio[] = [
     itens: [
       {
         to: "/relatorios/fiscal",
-        titulo: "Relatório fiscal",
+        titulo: "Fechamento para o contador",
         descricao:
-          "Consolidado do ano para levar ao contador: receita, custo, despesas, estoque e contas a receber.",
+          "Consolidado do ano: receita, custo, despesas, estoque e contas a receber.",
         disponivel: true,
       },
     ],
@@ -154,12 +154,7 @@ const GRUPOS: GrupoRelatorio[] = [
     nome: "Estoque",
     icone: icones.estoque,
     itens: [
-      {
-        to: "/relatorios/kardex",
-        titulo: "Kardex do produto",
-        descricao: "Extrato de entradas, saídas e ajustes com saldo.",
-        disponivel: true,
-      },
+
       {
         to: "/relatorios/perdas",
         titulo: "Perdas e ajustes",
@@ -193,14 +188,14 @@ const GRUPOS: GrupoRelatorio[] = [
     itens: [
       {
         to: "/relatorios/ranking-clientes",
-        titulo: "Ranking de clientes",
-        descricao: "Quem mais compra, por faturamento e nº de compras.",
+        titulo: "Quem mais compra",
+        descricao: "Seus melhores clientes por faturamento e nº de compras.",
         disponivel: true,
       },
       {
         to: "/relatorios/clientes-inativos",
-        titulo: "Clientes inativos",
-        descricao: "Clientes sem compras há muito tempo, para reativar.",
+        titulo: "Clientes que sumiram",
+        descricao: "Quem não compra há muito tempo, para chamar de volta.",
         disponivel: true,
       },
     ],

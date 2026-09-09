@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type {
   PeriodoRelatorio,
   RelatorioSaudeEstoque,
@@ -150,7 +151,11 @@ export default function SaudeEstoquePage() {
             <tbody>
               {linhas.map((l) => (
                 <tr key={l.produto_id}>
-                  <td>{l.produto_nome}</td>
+                  <td>
+                    <Link to={`/relatorios/kardex?produto_id=${l.produto_id}`}>
+                      {l.produto_nome}
+                    </Link>
+                  </td>
                   <td className="num">{l.estoque}</td>
                   <td className="num muted">{l.estoque_minimo}</td>
                   <td className="num">{l.qtd_vendida}</td>
@@ -178,7 +183,11 @@ export default function SaudeEstoquePage() {
             <tbody>
               {linhas.map((l) => (
                 <tr key={l.produto_id}>
-                  <td>{l.produto_nome}</td>
+                  <td>
+                    <Link to={`/relatorios/kardex?produto_id=${l.produto_id}`}>
+                      {l.produto_nome}
+                    </Link>
+                  </td>
                   <td className="num">{l.estoque}</td>
                   <td className="num">{brl(l.valor_em_estoque)}</td>
                   <td>{dataBR(l.ultima_venda)}</td>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { Categoria, Produto, ProdutoCreate } from "../types";
 import { listarCategorias } from "../services/categorias";
 import {
@@ -472,6 +472,14 @@ export default function ProdutosPage() {
                     )}
                   </td>
                   <td className="acoes">
+                    {/* Extrato do produto: o lugar natural de entrada é aqui,
+                        com o produto já escolhido. */}
+                    <Link
+                      className="btn secundario pequeno"
+                      to={`/relatorios/kardex?produto_id=${p.id}`}
+                    >
+                      Extrato
+                    </Link>
                     <button className="btn secundario pequeno" onClick={() => abrirEditar(p)}>
                       Editar
                     </button>

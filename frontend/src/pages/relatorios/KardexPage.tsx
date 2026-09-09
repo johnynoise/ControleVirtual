@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { PeriodoRelatorio, Produto, RelatorioKardex } from "../../types";
 import { obterKardex } from "../../services/relatorios";
 import { listarProdutos } from "../../services/produtos";
@@ -32,22 +33,35 @@ const rotuloTipo: Record<string, { texto: string; classe: string }> = {
 };
 
 export default function KardexPage() {
+  // O caminho normal de entrada é pela lista de produtos, que manda o produto
+  // no link. O seletor abaixo existe para quem chega direto na tela.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const idDaUrl = Number(searchParams.get("produto_id")) || null;
+
   const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [produtoId, setProdutoId] = useState<number | null>(null);
+  const [produtoId, setProdutoId] = useState<number | null>(idDaUrl);
   const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 90 });
   const [dados, setDados] = useState<RelatorioKardex | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Carrega a lista de produtos para o seletor.
+  // Carrega a lista de produtos para o seletor. Só escolhe um por conta
+  // própria quando a URL não disse qual.
   useEffect(() => {
     listarProdutos()
       .then((lista) => {
         setProdutos(lista);
-        if (lista.length > 0) setProdutoId(lista[0].id);
+        if (idDaUrl == null && lista.length > 0) setProdutoId(lista[0].id);
       })
       .catch((e) => setErro(extrairErro(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Troca de produto reflete na URL, então o extrato fica compartilhável.
+  function trocarProduto(id: number) {
+    setProdutoId(id);
+    setSearchParams({ produto_id: String(id) }, { replace: true });
+  }
 
   // Carrega o kardex sempre que produto ou período mudam.
   useEffect(() => {
@@ -69,19 +83,24 @@ export default function KardexPage() {
   return (
     <div className="page">
       <RelatorioHeader
-        titulo="Kardex do produto"
+        titulo={dados ? `Extrato de ${dados.produto_nome}` : "Extrato do produto"}
         icone={icone}
         acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}
 
+      <p className="subtitle">
+        Toda entrada, saída e ajuste do produto, com o saldo depois de cada
+        movimentação. Serve para entender como o estoque chegou onde está.
+      </p>
+
       <div className="filtros-linha">
         <label>
           Produto
           <select
             value={produtoId ?? ""}
-            onChange={(e) => setProdutoId(Number(e.target.value))}
+            onChange={(e) => trocarProduto(Number(e.target.value))}
           >
             {produtos.length === 0 && <option value="">Nenhum produto</option>}
             {produtos.map((p) => (
