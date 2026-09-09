@@ -2,6 +2,7 @@ import { api } from "./api";
 import type {
   MaisVendidos,
   PeriodoRelatorio,
+  RelatorioDestaques,
   RelatorioResultado,
   ResumoEstoque,
   ResumoPeriodo,
@@ -22,6 +23,15 @@ export async function obterResumo(periodo: PeriodoRelatorio): Promise<ResumoPeri
   const { data } = await api.get<ResumoPeriodo>("/relatorios/resumo", {
     params: params(periodo),
   });
+  return data;
+}
+
+/**
+ * Destaques do hub: um número por relatório. Sem período — o backend usa
+ * sempre o mês corrente.
+ */
+export async function obterDestaques(): Promise<RelatorioDestaques> {
+  const { data } = await api.get<RelatorioDestaques>("/relatorios/destaques");
   return data;
 }
 

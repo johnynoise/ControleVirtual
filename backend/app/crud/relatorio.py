@@ -36,6 +36,19 @@ def _pct(parte: Decimal, total: Decimal) -> Decimal:
     return (parte / total * 100).quantize(_CENTAVOS)
 
 
+def _reais(valor: Decimal) -> str:
+    """Dinheiro em texto no padrão pt-BR, para compor frases de destaque.
+
+    Os valores em si vão para a tela como número, que formata com Intl. Isto é
+    só para os casos em que o dinheiro aparece no meio de uma frase montada no
+    backend.
+    """
+    sinal = "-" if valor < 0 else ""
+    inteiro, _, centavos = f"{abs(valor):.2f}".partition(".")
+    milhar = f"{int(inteiro):,}".replace(",", ".")
+    return f"{sinal}R$ {milhar},{centavos}"
+
+
 class Periodo(NamedTuple):
     """Intervalo de datas fechado nas duas pontas, usado por todos os relatórios.
 
@@ -1108,3 +1121,195 @@ def _avisos_resultado(dados: dict, despesas: dict) -> list[str]:
         "resultado operacional e aparecem em separado."
     )
     return avisos
+
+
+# ---------------------------------------------------------------------------
+# Destaques do hub de relatórios.
+# ---------------------------------------------------------------------------
+
+# Janela de inatividade usada no destaque de clientes (a mesma do painel).
+_DIAS_INATIVO_DESTAQUE = 30
+
+# Peso de desconto sobre o bruto a partir do qual vale chamar atenção.
+_DESCONTO_ALERTA = Decimal("10")
+
+
+def _plural(n: int, singular: str, plural: str) -> str:
+    """"1 movimentação" / "3 movimentações" — evita o "1 movimentações"."""
+    return f"{n} {singular if n == 1 else plural}"
+
+
+def _destaque(
+    chave: str,
+    valor,
+    formato: str,
+    detalhe: str | None = None,
+    tom: str = "neutro",
+) -> dict:
+    """Monta um destaque. ``valor`` vai como texto; a tela decide a formatação."""
+    return {
+        "chave": chave,
+        "valor": str(valor),
+        "formato": formato,
+        "detalhe": detalhe,
+        "tom": tom,
+    }
+
+
+def destaques(db: Session) -> dict:
+    """Um número por relatório, para o hub deixar de ser uma lista de links cegos.
+
+    O recorte é o mês corrente (do dia 1º até hoje), o mesmo padrão do
+    relatório de resultado — as duas telas contam a mesma história.
+
+    Aqui as agregações dos relatórios são chamadas de verdade, em vez de
+    recalculadas de forma aproximada: custa algumas varreduras a mais, mas
+    garante que o número do card é exatamente o número que a dona vai
+    encontrar quando abrir o relatório. Num volume de loja isso é irrelevante;
+    se um dia pesar, o caminho é cachear este endpoint, não aproximar a conta.
+    """
+    hoje = date.today()
+    periodo = periodo_entre(hoje.replace(day=1), hoje)
+
+    linhas: list[dict] = []
+
+    # --- Dinheiro -----------------------------------------------------------
+    apuracao = _apuracao(db, periodo)["resultado"]
+    sobra = apuracao["resultado_operacional"]
+    linhas.append(
+        _destaque(
+            "resultado",
+            sobra,
+            "moeda",
+            f"sobrou no mês · margem {apuracao['margem_liquida_percentual']}%",
+            tom="perigo" if sobra < 0 else "bom",
+        )
+    )
+
+    formas = vendas_por_forma_pagamento(db, periodo)
+    if formas["linhas"]:
+        lider = formas["linhas"][0]
+        linhas.append(
+            _destaque(
+                "forma-pagamento",
+                lider["percentual"],
+                "percentual",
+                f"{lider['forma_rotulo']} lidera as vendas",
+            )
+        )
+
+    desc = descontos(db, periodo)
+    if desc["num_vendas"] > 0:
+        linhas.append(
+            _destaque(
+                "descontos",
+                desc["percentual_medio"],
+                "percentual",
+                "do valor bruto · "
+                + _plural(
+                    desc["num_vendas_com_desconto"],
+                    "venda com desconto",
+                    "vendas com desconto",
+                ),
+                tom="aviso" if desc["percentual_medio"] >= _DESCONTO_ALERTA else "neutro",
+            )
+        )
+
+    # --- Vendas -------------------------------------------------------------
+    horarios = vendas_por_dia_semana_horario(db, periodo)
+    if horarios["melhor_dia"]:
+        detalhe = "dia mais forte do mês"
+        if horarios["melhor_hora"] is not None:
+            detalhe = f"dia mais forte · pico às {horarios['melhor_hora']}h"
+        linhas.append(_destaque("vendas-dia-horario", horarios["melhor_dia"], "texto", detalhe))
+
+    # --- Produtos e estoque -------------------------------------------------
+    produtos = produtos_faturamento(db, periodo)
+    if produtos["por_produto"]:
+        linhas.append(
+            _destaque(
+                "produtos-faturamento",
+                produtos["qtd_classe_a"],
+                "numero",
+                "produtos puxam 80% do faturamento",
+            )
+        )
+
+    saude = saude_estoque(db, periodo)
+    if saude["qtd_repor"] > 0:
+        linhas.append(
+            _destaque(
+                "saude-estoque",
+                saude["qtd_repor"],
+                "numero",
+                ("produto pode faltar" if saude["qtd_repor"] == 1 else "produtos podem faltar")
+                + f" · {_reais(saude['valor_parado_total'])} parados",
+                tom="perigo",
+            )
+        )
+    elif saude["qtd_parado"] > 0:
+        linhas.append(
+            _destaque(
+                "saude-estoque",
+                saude["valor_parado_total"],
+                "moeda",
+                "parados em " + _plural(saude["qtd_parado"], "produto", "produtos"),
+                tom="aviso",
+            )
+        )
+
+    perdas = perdas_e_ajustes(db, periodo)
+    if perdas["valor_perdas_estimado"] > 0:
+        linhas.append(
+            _destaque(
+                "perdas",
+                perdas["valor_perdas_estimado"],
+                "moeda",
+                "em perdas · "
+                + _plural(perdas["num_movimentacoes"], "movimentação", "movimentações"),
+                tom="aviso",
+            )
+        )
+
+    # --- Compras ------------------------------------------------------------
+    compras = compras_por_fornecedor(db, periodo)
+    if compras["valor_total_geral"] > 0:
+        linhas.append(
+            _destaque(
+                "compras-fornecedor",
+                compras["valor_total_geral"],
+                "moeda",
+                "comprados de "
+                + _plural(len(compras["linhas"]), "fornecedor", "fornecedores"),
+            )
+        )
+
+    # --- Clientes -----------------------------------------------------------
+    ranking = ranking_clientes(db, periodo)
+    if ranking["qtd_clientes"] > 0 or ranking["num_vendas_sem_cliente"] > 0:
+        linhas.append(
+            _destaque(
+                "ranking-clientes",
+                ranking["qtd_clientes"],
+                "numero",
+                f"{ranking['percentual_sem_cliente']}% do faturamento sem cliente identificado",
+            )
+        )
+
+    inativos = clientes_inativos(db, _DIAS_INATIVO_DESTAQUE)
+    if inativos["qtd_clientes"] > 0:
+        linhas.append(
+            _destaque(
+                "clientes-inativos",
+                inativos["qtd_clientes"],
+                "numero",
+                f"sem comprar há {_DIAS_INATIVO_DESTAQUE}+ dias",
+                tom="aviso",
+            )
+        )
+
+    return {
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
+        "linhas": linhas,
+    }

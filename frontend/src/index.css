@@ -1398,6 +1398,55 @@ a.relatorio-card:hover {
   line-height: 1.45;
 }
 
+/* Sinal do mês no card: transforma o hub de lista de links em painel de
+   triagem, mostrando o número antes de a dona abrir o relatório. */
+.relatorio-card-destaque {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--raio-sm);
+  background: var(--surface-2);
+  border-left: 3px solid var(--text-muted);
+}
+
+.relatorio-card-destaque strong {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.relatorio-card-destaque span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.relatorio-card-destaque.bom {
+  border-left-color: var(--verde);
+}
+
+.relatorio-card-destaque.bom strong {
+  color: var(--verde);
+}
+
+.relatorio-card-destaque.aviso {
+  border-left-color: var(--ambar);
+}
+
+.relatorio-card-destaque.aviso strong {
+  color: var(--ambar);
+}
+
+.relatorio-card-destaque.perigo {
+  border-left-color: var(--vermelho);
+}
+
+.relatorio-card-destaque.perigo strong {
+  color: var(--vermelho);
+}
+
 .relatorio-card .seta {
   width: 18px;
   height: 18px;

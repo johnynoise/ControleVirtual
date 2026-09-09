@@ -20,6 +20,7 @@ from app.schemas.relatorio import (
     RelatorioClientesInativos,
     RelatorioComprasFornecedor,
     RelatorioDescontos,
+    RelatorioDestaques,
     RelatorioFormaPagamento,
     RelatorioKardex,
     RelatorioPerdas,
@@ -89,6 +90,16 @@ def resumo_periodo(
     periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
 ):
     return crud_relatorio.resumo(db, periodo)
+
+
+@router.get("/destaques", response_model=RelatorioDestaques)
+def relatorio_destaques(db: Session = Depends(get_db)):
+    """Um número por relatório, para os cards do hub.
+
+    Sem período: usa sempre o mês corrente, o mesmo recorte padrão do
+    relatório de resultado.
+    """
+    return crud_relatorio.destaques(db)
 
 
 @router.get("/resultado", response_model=RelatorioResultado)

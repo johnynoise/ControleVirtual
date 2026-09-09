@@ -740,6 +740,30 @@ export interface RelatorioClientesInativos {
 }
 
 // ---------------------------------------------------------------------------
+// Destaques do hub de relatórios.
+// ---------------------------------------------------------------------------
+
+export type FormatoDestaque = "moeda" | "numero" | "percentual" | "texto";
+export type TomDestaque = "neutro" | "bom" | "aviso" | "perigo";
+
+/** Sinal curto de um relatório, exibido no card do hub. */
+export interface DestaqueRelatorio {
+  /** Slug do relatório, usado para casar com o card. */
+  chave: string;
+  /** Número como texto, ou o próprio rótulo quando `formato` é "texto". */
+  valor: string;
+  formato: FormatoDestaque;
+  detalhe: string | null;
+  tom: TomDestaque;
+}
+
+export interface RelatorioDestaques {
+  inicio: string;
+  fim: string;
+  linhas: DestaqueRelatorio[];
+}
+
+// ---------------------------------------------------------------------------
 // Apuração do resultado ("quanto sobrou").
 // ---------------------------------------------------------------------------
 

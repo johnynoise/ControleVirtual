@@ -302,6 +302,30 @@ class RelatorioClientesInativos(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Destaques do hub de relatórios.
+# ---------------------------------------------------------------------------
+
+
+class DestaqueRelatorio(BaseModel):
+    """Sinal curto de um relatório, exibido no card do hub."""
+
+    # Identifica o card na tela (o slug do relatório).
+    chave: str
+    # Vai como texto: número quando há formato numérico, ou o próprio rótulo
+    # quando ``formato`` é "texto". A formatação fica na tela.
+    valor: str
+    formato: str  # "moeda" | "numero" | "percentual" | "texto"
+    detalhe: str | None
+    tom: str  # "neutro" | "bom" | "aviso" | "perigo"
+
+
+class RelatorioDestaques(BaseModel):
+    inicio: date
+    fim: date
+    linhas: list[DestaqueRelatorio]
+
+
+# ---------------------------------------------------------------------------
 # Apuração do resultado ("quanto sobrou").
 # ---------------------------------------------------------------------------
 
