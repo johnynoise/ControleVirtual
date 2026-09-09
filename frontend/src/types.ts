@@ -540,23 +540,36 @@ export interface RelatorioCurvaAbc {
   linhas: CurvaAbcLinha[];
 }
 
-export interface SemGiroLinha {
+/** Situação do produto na saúde do estoque; define a aba onde ele aparece. */
+export type SituacaoEstoque = "repor" | "parado" | "sem_estoque" | "saudavel";
+
+export interface SaudeEstoqueLinha {
   produto_id: number;
   produto_nome: string;
+  situacao: SituacaoEstoque;
   estoque: number;
-  valor_parado: string;
+  estoque_minimo: number;
+  qtd_vendida: number;
+  venda_media_diaria: string;
+  /** null = sem venda no período, então não há ritmo para calcular. */
+  cobertura_dias: number | null;
+  valor_em_estoque: string;
   ultima_venda: string | null;
   dias_sem_venda: number | null;
 }
 
-export interface RelatorioSemGiro {
-  qtd_sem_estoque: number;
+export interface RelatorioSaudeEstoque {
   dias: number;
   inicio: string;
   fim: string;
+  cobertura_curta_dias: number;
   qtd_produtos: number;
+  qtd_repor: number;
+  qtd_parado: number;
+  qtd_sem_estoque: number;
   valor_parado_total: string;
-  linhas: SemGiroLinha[];
+  valor_estoque_total: string;
+  linhas: SaudeEstoqueLinha[];
 }
 
 export interface KardexLinha {
@@ -706,23 +719,6 @@ export interface RelatorioPerdas {
   num_movimentacoes: number;
   valor_perdas_estimado: string;
   linhas: PerdaLinha[];
-}
-
-export interface GiroLinha {
-  produto_id: number;
-  produto_nome: string;
-  estoque: number;
-  qtd_vendida: number;
-  venda_media_diaria: string;
-  cobertura_dias: number | null;
-}
-
-export interface RelatorioGiro {
-  dias: number;
-  inicio: string;
-  fim: string;
-  qtd_produtos: number;
-  linhas: GiroLinha[];
 }
 
 export interface ClienteInativoLinha {

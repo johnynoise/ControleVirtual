@@ -145,12 +145,7 @@ const GRUPOS: GrupoRelatorio[] = [
         descricao: "Quais produtos concentram o seu faturamento (regra 80/20).",
         disponivel: true,
       },
-      {
-        to: "/relatorios/sem-giro",
-        titulo: "Produtos sem giro",
-        descricao: "Itens parados em estoque, sem vendas no período.",
-        disponivel: true,
-      },
+
       {
         to: "/relatorios/vendas-categoria",
         titulo: "Vendas por categoria",
@@ -176,9 +171,10 @@ const GRUPOS: GrupoRelatorio[] = [
         disponivel: true,
       },
       {
-        to: "/relatorios/giro",
-        titulo: "Giro e cobertura",
-        descricao: "Dias de estoque restantes no ritmo de venda atual.",
+        to: "/relatorios/saude-estoque",
+        titulo: "Saúde do estoque",
+        descricao:
+          "O que vai faltar e o que está parado prendendo dinheiro, lado a lado.",
         disponivel: true,
       },
     ],

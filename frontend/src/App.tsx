@@ -24,7 +24,7 @@ const RelatoriosPage = lazy(() => import("./pages/RelatoriosPage"));
 const ResultadoPage = lazy(() => import("./pages/relatorios/ResultadoPage"));
 const FormaPagamentoPage = lazy(() => import("./pages/relatorios/FormaPagamentoPage"));
 const CurvaAbcPage = lazy(() => import("./pages/relatorios/CurvaAbcPage"));
-const SemGiroPage = lazy(() => import("./pages/relatorios/SemGiroPage"));
+const SaudeEstoquePage = lazy(() => import("./pages/relatorios/SaudeEstoquePage"));
 const KardexPage = lazy(() => import("./pages/relatorios/KardexPage"));
 const RankingClientesPage = lazy(() => import("./pages/relatorios/RankingClientesPage"));
 const ComprasFornecedorPage = lazy(() => import("./pages/relatorios/ComprasFornecedorPage"));
@@ -32,7 +32,6 @@ const VendasDiaHorarioPage = lazy(() => import("./pages/relatorios/VendasDiaHora
 const DescontosPage = lazy(() => import("./pages/relatorios/DescontosPage"));
 const VendasCategoriaPage = lazy(() => import("./pages/relatorios/VendasCategoriaPage"));
 const PerdasPage = lazy(() => import("./pages/relatorios/PerdasPage"));
-const GiroPage = lazy(() => import("./pages/relatorios/GiroPage"));
 const ClientesInativosPage = lazy(() => import("./pages/relatorios/ClientesInativosPage"));
 const RelatorioFiscalPage = lazy(() => import("./pages/relatorios/RelatorioFiscalPage"));
 const ConfiguracoesPage = lazy(() => import("./pages/ConfiguracoesPage"));
@@ -186,10 +185,10 @@ function App() {
             }
           />
           <Route
-            path="relatorios/sem-giro"
+            path="relatorios/saude-estoque"
             element={
               <Suspense fallback={<Carregando />}>
-                <SemGiroPage />
+                <SaudeEstoquePage />
               </Suspense>
             }
           />
@@ -246,14 +245,6 @@ function App() {
             element={
               <Suspense fallback={<Carregando />}>
                 <PerdasPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="relatorios/giro"
-            element={
-              <Suspense fallback={<Carregando />}>
-                <GiroPage />
               </Suspense>
             }
           />

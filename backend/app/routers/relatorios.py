@@ -22,12 +22,11 @@ from app.schemas.relatorio import (
     RelatorioCurvaAbc,
     RelatorioDescontos,
     RelatorioFormaPagamento,
-    RelatorioGiro,
     RelatorioKardex,
     RelatorioPerdas,
     RelatorioRankingClientes,
     RelatorioResultado,
-    RelatorioSemGiro,
+    RelatorioSaudeEstoque,
     RelatorioVendasCategoria,
     RelatorioVendasDiaHorario,
     ResumoEstoque,
@@ -140,11 +139,16 @@ def relatorio_curva_abc(
     return crud_relatorio.curva_abc(db, periodo)
 
 
-@router.get("/sem-giro", response_model=RelatorioSemGiro)
-def relatorio_sem_giro(
+@router.get("/saude-estoque", response_model=RelatorioSaudeEstoque)
+def relatorio_saude_estoque(
     periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
 ):
-    return crud_relatorio.produtos_sem_giro(db, periodo)
+    """O que vai faltar e o que está parado, num só relatório.
+
+    Substitui os antigos ``/sem-giro`` e ``/giro``: as duas perguntas saíam do
+    mesmo cálculo e listavam os mesmos produtos.
+    """
+    return crud_relatorio.saude_estoque(db, periodo)
 
 
 @router.get("/kardex", response_model=RelatorioKardex)
@@ -198,13 +202,6 @@ def relatorio_perdas(
     periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
 ):
     return crud_relatorio.perdas_e_ajustes(db, periodo)
-
-
-@router.get("/giro", response_model=RelatorioGiro)
-def relatorio_giro(
-    periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
-):
-    return crud_relatorio.giro_e_cobertura(db, periodo)
 
 
 @router.get("/clientes-inativos", response_model=RelatorioClientesInativos)

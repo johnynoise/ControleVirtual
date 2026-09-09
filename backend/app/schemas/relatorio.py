@@ -103,25 +103,36 @@ class RelatorioCurvaAbc(BaseModel):
     linhas: list[CurvaAbcLinha]
 
 
-class SemGiroLinha(BaseModel):
+class SaudeEstoqueLinha(BaseModel):
     produto_id: int
     produto_nome: str
+    # "repor" | "parado" | "sem_estoque" | "saudavel" — é por aqui que a tela
+    # separa as abas "vai faltar" e "está parado".
+    situacao: str
     estoque: int
-    valor_parado: Decimal
+    estoque_minimo: int
+    qtd_vendida: int
+    venda_media_diaria: Decimal
+    cobertura_dias: int | None  # None = sem venda no período
+    valor_em_estoque: Decimal
     ultima_venda: date | None
     dias_sem_venda: int | None
 
 
-class RelatorioSemGiro(BaseModel):
+class RelatorioSaudeEstoque(BaseModel):
     dias: int
     inicio: date
     fim: date
+    cobertura_curta_dias: int  # limite usado para classificar como "repor"
     qtd_produtos: int
-    # Produtos sem venda no período que também estão sem estoque: não são
-    # capital parado, então ficam fora das linhas e só aparecem na contagem.
+    qtd_repor: int
+    qtd_parado: int
+    # Sem venda e sem estoque: não é dinheiro parado nem risco de falta, então
+    # fica fora das abas, mas é contado para o número não sumir sem explicação.
     qtd_sem_estoque: int
     valor_parado_total: Decimal
-    linhas: list[SemGiroLinha]
+    valor_estoque_total: Decimal
+    linhas: list[SaudeEstoqueLinha]
 
 
 class KardexLinha(BaseModel):
@@ -272,23 +283,6 @@ class RelatorioPerdas(BaseModel):
     num_movimentacoes: int
     valor_perdas_estimado: Decimal
     linhas: list[PerdaLinha]
-
-
-class GiroLinha(BaseModel):
-    produto_id: int
-    produto_nome: str
-    estoque: int
-    qtd_vendida: int
-    venda_media_diaria: Decimal
-    cobertura_dias: int | None
-
-
-class RelatorioGiro(BaseModel):
-    dias: int
-    inicio: date
-    fim: date
-    qtd_produtos: int
-    linhas: list[GiroLinha]
 
 
 class ClienteInativoLinha(BaseModel):

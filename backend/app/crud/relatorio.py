@@ -234,6 +234,10 @@ def estoque(db: Session) -> dict:
 # ---------------------------------------------------------------------------
 
 # Rótulos amigáveis das formas de pagamento (a coluna guarda o valor "cru").
+# Cobertura (dias de estoque restantes) a partir da qual o produto entra na
+# aba "vai faltar" da saúde do estoque.
+_DIAS_COBERTURA_CURTA = 30
+
 _FORMAS_PAGAMENTO = {
     "dinheiro": "Dinheiro",
     "cartao_credito": "Cartão de crédito",
@@ -361,18 +365,27 @@ def curva_abc(db: Session, periodo: Periodo) -> dict:
     }
 
 
-def produtos_sem_giro(db: Session, periodo: Periodo) -> dict:
-    """Produtos ativos com estoque e sem nenhuma venda no período.
+def saude_estoque(db: Session, periodo: Periodo) -> dict:
+    """Situação de cada produto ativo: o que vai faltar e o que está parado.
 
-    A pergunta do relatório é "onde está o dinheiro parado", então produto sem
-    estoque fica de fora: ele não tem capital imobilizado e só inflaria a
-    contagem com linhas de valor zero. A quantidade deles é devolvida em
-    ``qtd_sem_estoque`` para o número não desaparecer sem explicação.
+    As duas perguntas de estoque são opostas e vivem do mesmo cálculo, então
+    saem juntas aqui. Para cada produto ativo o relatório diz quanto vendeu no
+    período, quantos dias o estoque atual ainda dura nesse ritmo (cobertura) e
+    quanto dinheiro está imobilizado nele.
+
+    A coluna ``situacao`` classifica cada linha, e é por ela que a tela separa
+    as abas:
+
+    * ``repor`` — vendeu e a cobertura é curta (<= ``_DIAS_COBERTURA_CURTA``):
+      vai faltar se não comprar.
+    * ``parado`` — tem estoque e não vendeu nada no período: capital imobilizado.
+    * ``sem_estoque`` — não vendeu e não tem estoque. Não é dinheiro parado nem
+      risco de falta, então fica fora das duas abas, mas é contado.
+    * ``saudavel`` — vendeu e a cobertura é confortável.
     """
-    # Produtos vendidos no período (para excluí-los da lista).
-    vendidos_periodo = {
-        pid
-        for (pid,) in db.query(ItemVenda.produto_id)
+    # Quantidade vendida por produto no período.
+    vendido = dict(
+        db.query(ItemVenda.produto_id, func.sum(ItemVenda.quantidade))
         .join(Venda, ItemVenda.venda_id == Venda.id)
         .filter(
             Venda.criado_em >= periodo.inicio,
@@ -382,9 +395,9 @@ def produtos_sem_giro(db: Session, periodo: Periodo) -> dict:
             ItemVenda.produto_id.isnot(None),
             ItemVenda.quantidade > 0,
         )
-        .distinct()
+        .group_by(ItemVenda.produto_id)
         .all()
-    }
+    )
 
     # Data da última venda de cada produto (de qualquer período).
     ultima_venda = dict(
@@ -403,42 +416,81 @@ def produtos_sem_giro(db: Session, periodo: Periodo) -> dict:
 
     hoje = date.today()
     linhas: list[dict] = []
-    valor_parado_total = Decimal("0")
+    qtd_repor = 0
+    qtd_parado = 0
     qtd_sem_estoque = 0
+    valor_parado_total = Decimal("0")
+    valor_estoque_total = Decimal("0")
+
     for p in produtos:
-        if p.id in vendidos_periodo:
-            continue
+        qtd_vendida = int(vendido.get(p.id, 0) or 0)
         estoque_qtd = p.estoque or 0
-        if estoque_qtd <= 0:
+        valor_em_estoque = _q((p.preco_custo or 0) * estoque_qtd)
+        valor_estoque_total += valor_em_estoque
+
+        venda_media = (Decimal(qtd_vendida) / Decimal(periodo.dias)).quantize(_CENTAVOS)
+        # Sem venda no período a cobertura é "infinita": não há ritmo para dividir.
+        cobertura = (
+            int((Decimal(estoque_qtd) / venda_media).to_integral_value())
+            if venda_media > 0
+            else None
+        )
+
+        if qtd_vendida > 0:
+            situacao = "repor" if cobertura is not None and cobertura <= _DIAS_COBERTURA_CURTA else "saudavel"
+        elif estoque_qtd > 0:
+            situacao = "parado"
+        else:
+            situacao = "sem_estoque"
+
+        if situacao == "repor":
+            qtd_repor += 1
+        elif situacao == "parado":
+            qtd_parado += 1
+            valor_parado_total += valor_em_estoque
+        elif situacao == "sem_estoque":
             qtd_sem_estoque += 1
-            continue
-        valor_parado = _q((p.preco_custo or 0) * estoque_qtd)
-        valor_parado_total += valor_parado
 
         ult = ultima_venda.get(p.id)
         ult_data = ult.date() if ult else None
-        dias_sem_venda = (hoje - ult_data).days if ult_data else None
 
         linhas.append(
             {
                 "produto_id": p.id,
                 "produto_nome": p.nome,
+                "situacao": situacao,
                 "estoque": estoque_qtd,
-                "valor_parado": valor_parado,
+                "estoque_minimo": p.estoque_minimo or 0,
+                "qtd_vendida": qtd_vendida,
+                "venda_media_diaria": venda_media,
+                "cobertura_dias": cobertura,
+                "valor_em_estoque": valor_em_estoque,
                 "ultima_venda": ult_data,
-                "dias_sem_venda": dias_sem_venda,
+                "dias_sem_venda": (hoje - ult_data).days if ult_data else None,
             }
         )
 
-    # Ordena por maior capital parado (mais relevante primeiro).
-    linhas.sort(key=lambda x: x["valor_parado"], reverse=True)
+    # Ordena servindo as duas abas de uma vez: primeiro o que vai faltar (menor
+    # cobertura no topo), depois o que está parado (maior capital primeiro).
+    ordem_situacao = {"repor": 0, "parado": 1, "saudavel": 2, "sem_estoque": 3}
+    linhas.sort(
+        key=lambda x: (
+            ordem_situacao[x["situacao"]],
+            x["cobertura_dias"] if x["situacao"] == "repor" else -x["valor_em_estoque"],
+        )
+    )
+
     return {
         "dias": periodo.dias,
         "inicio": periodo.inicio_data,
         "fim": periodo.fim_data,
+        "cobertura_curta_dias": _DIAS_COBERTURA_CURTA,
         "qtd_produtos": len(linhas),
+        "qtd_repor": qtd_repor,
+        "qtd_parado": qtd_parado,
         "qtd_sem_estoque": qtd_sem_estoque,
         "valor_parado_total": _q(valor_parado_total),
+        "valor_estoque_total": _q(valor_estoque_total),
         "linhas": linhas,
     }
 
@@ -841,60 +893,6 @@ def perdas_e_ajustes(db: Session, periodo: Periodo) -> dict:
         "fim": periodo.fim_data,
         "num_movimentacoes": len(linhas),
         "valor_perdas_estimado": _q(valor_perdas),
-        "linhas": linhas,
-    }
-
-
-def giro_e_cobertura(db: Session, periodo: Periodo) -> dict:
-    """Giro e cobertura (dias de estoque) por produto ativo no período."""
-    # Quantidade vendida por produto no período.
-    vendido = dict(
-        db.query(ItemVenda.produto_id, func.sum(ItemVenda.quantidade))
-        .join(Venda, ItemVenda.venda_id == Venda.id)
-        .filter(
-            Venda.criado_em >= periodo.inicio,
-            Venda.criado_em <= periodo.fim,
-            Venda.cancelada_em.is_(None),
-            func.coalesce(Venda.entrega_status, "") != "pendente",
-            ItemVenda.produto_id.isnot(None),
-            ItemVenda.quantidade > 0,
-        )
-        .group_by(ItemVenda.produto_id)
-        .all()
-    )
-
-    produtos = db.query(Produto).filter(Produto.ativo.is_(True)).all()
-    dias_periodo = periodo.dias
-
-    linhas = []
-    for p in produtos:
-        qtd_vendida = int(vendido.get(p.id, 0) or 0)
-        estoque_qtd = p.estoque or 0
-        venda_media = Decimal(qtd_vendida) / Decimal(dias_periodo)
-        venda_media = venda_media.quantize(Decimal("0.01"))
-        if venda_media > 0:
-            cobertura = int((Decimal(estoque_qtd) / venda_media).to_integral_value())
-        else:
-            cobertura = None  # sem vendas: cobertura "infinita"
-        linhas.append(
-            {
-                "produto_id": p.id,
-                "produto_nome": p.nome,
-                "estoque": estoque_qtd,
-                "qtd_vendida": qtd_vendida,
-                "venda_media_diaria": venda_media,
-                "cobertura_dias": cobertura,
-            }
-        )
-
-    # Ordena: quem tem cobertura (vai acabar) primeiro, menor cobertura no topo;
-    # produtos sem venda vão para o fim.
-    linhas.sort(key=lambda x: (x["cobertura_dias"] is None, x["cobertura_dias"] or 0))
-    return {
-        "dias": periodo.dias,
-        "inicio": periodo.inicio_data,
-        "fim": periodo.fim_data,
-        "qtd_produtos": len(linhas),
         "linhas": linhas,
     }
 

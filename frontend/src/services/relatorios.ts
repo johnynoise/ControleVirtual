@@ -65,7 +65,7 @@ import type {
   RelatorioFormaPagamento,
   RelatorioKardex,
   RelatorioRankingClientes,
-  RelatorioSemGiro,
+  RelatorioSaudeEstoque,
 } from "../types";
 
 export async function obterFormaPagamento(
@@ -87,12 +87,17 @@ export async function obterCurvaAbc(
   return data;
 }
 
-export async function obterSemGiro(
+/**
+ * Saúde do estoque: o que vai faltar e o que está parado. Substitui os antigos
+ * `obterSemGiro` e `obterGiro`, que saíam do mesmo cálculo.
+ */
+export async function obterSaudeEstoque(
   periodo: PeriodoRelatorio
-): Promise<RelatorioSemGiro> {
-  const { data } = await api.get<RelatorioSemGiro>("/relatorios/sem-giro", {
-    params: params(periodo),
-  });
+): Promise<RelatorioSaudeEstoque> {
+  const { data } = await api.get<RelatorioSaudeEstoque>(
+    "/relatorios/saude-estoque",
+    { params: params(periodo) }
+  );
   return data;
 }
 
@@ -131,7 +136,6 @@ export async function obterComprasFornecedor(
 import type {
   RelatorioClientesInativos,
   RelatorioDescontos,
-  RelatorioGiro,
   RelatorioPerdas,
   RelatorioVendasCategoria,
   RelatorioVendasDiaHorario,
@@ -170,15 +174,6 @@ export async function obterPerdas(
   periodo: PeriodoRelatorio
 ): Promise<RelatorioPerdas> {
   const { data } = await api.get<RelatorioPerdas>("/relatorios/perdas", {
-    params: params(periodo),
-  });
-  return data;
-}
-
-export async function obterGiro(
-  periodo: PeriodoRelatorio
-): Promise<RelatorioGiro> {
-  const { data } = await api.get<RelatorioGiro>("/relatorios/giro", {
     params: params(periodo),
   });
   return data;
