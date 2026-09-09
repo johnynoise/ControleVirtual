@@ -42,14 +42,15 @@ export default function SemGiroPage() {
       {erro && <div className="alert erro">{erro}</div>}
 
       <p className="subtitle">
-        Produtos ativos que não venderam nenhuma unidade no período. É capital
-        parado em estoque — candidatos a promoção ou liquidação.
+        Produtos ativos que têm estoque e não venderam nenhuma unidade no
+        período. É capital parado — candidatos a promoção ou liquidação.
       </p>
 
       <div className="kpis">
         <div className="kpi">
           <span className="kpi-label">Produtos sem giro</span>
           <span className="kpi-valor">{dados?.qtd_produtos ?? 0}</span>
+          <span className="kpi-sub">com estoque em mãos</span>
         </div>
         <div className="kpi">
           <span className="kpi-label">Capital parado</span>
@@ -58,6 +59,13 @@ export default function SemGiroPage() {
           </span>
           <span className="kpi-sub">estoque × custo</span>
         </div>
+        {dados != null && dados.qtd_sem_estoque > 0 && (
+          <div className="kpi">
+            <span className="kpi-label">Sem estoque e sem venda</span>
+            <span className="kpi-valor">{dados.qtd_sem_estoque}</span>
+            <span className="kpi-sub">fora da lista: não há dinheiro parado</span>
+          </div>
+        )}
       </div>
 
       <div className="card">

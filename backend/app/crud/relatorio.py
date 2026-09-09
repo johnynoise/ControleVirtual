@@ -360,7 +360,13 @@ def curva_abc(db: Session, periodo: Periodo) -> dict:
 
 
 def produtos_sem_giro(db: Session, periodo: Periodo) -> dict:
-    """Produtos ativos sem nenhuma venda no período (capital parado)."""
+    """Produtos ativos com estoque e sem nenhuma venda no período.
+
+    A pergunta do relatório é "onde está o dinheiro parado", então produto sem
+    estoque fica de fora: ele não tem capital imobilizado e só inflaria a
+    contagem com linhas de valor zero. A quantidade deles é devolvida em
+    ``qtd_sem_estoque`` para o número não desaparecer sem explicação.
+    """
     # Produtos vendidos no período (para excluí-los da lista).
     vendidos_periodo = {
         pid
@@ -396,10 +402,14 @@ def produtos_sem_giro(db: Session, periodo: Periodo) -> dict:
     hoje = date.today()
     linhas: list[dict] = []
     valor_parado_total = Decimal("0")
+    qtd_sem_estoque = 0
     for p in produtos:
         if p.id in vendidos_periodo:
             continue
         estoque_qtd = p.estoque or 0
+        if estoque_qtd <= 0:
+            qtd_sem_estoque += 1
+            continue
         valor_parado = _q((p.preco_custo or 0) * estoque_qtd)
         valor_parado_total += valor_parado
 
@@ -425,6 +435,7 @@ def produtos_sem_giro(db: Session, periodo: Periodo) -> dict:
         "inicio": periodo.inicio_data,
         "fim": periodo.fim_data,
         "qtd_produtos": len(linhas),
+        "qtd_sem_estoque": qtd_sem_estoque,
         "valor_parado_total": _q(valor_parado_total),
         "linhas": linhas,
     }

@@ -117,6 +117,9 @@ class RelatorioSemGiro(BaseModel):
     inicio: date
     fim: date
     qtd_produtos: int
+    # Produtos sem venda no período que também estão sem estoque: não são
+    # capital parado, então ficam fora das linhas e só aparecem na contagem.
+    qtd_sem_estoque: int
     valor_parado_total: Decimal
     linhas: list[SemGiroLinha]
 

@@ -550,6 +550,7 @@ export interface SemGiroLinha {
 }
 
 export interface RelatorioSemGiro {
+  qtd_sem_estoque: number;
   dias: number;
   inicio: string;
   fim: string;
