@@ -177,7 +177,9 @@ export default function DashboardPage() {
             inativos.qtd_clientes === 1 ? "cliente sumiu" : "clientes sumiram"
           }`,
           sub: `Sem comprar há ${DIAS_INATIVO}+ dias`,
-          para: "/relatorios/clientes-inativos",
+          // Leva a janela no link: sem isso o relatório abre no padrão dele
+          // (60 dias) e mostra um número diferente do que o alerta prometeu.
+          para: `/relatorios/clientes-inativos?dias=${DIAS_INATIVO}`,
           icone: (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="9" cy="8" r="3.5" />

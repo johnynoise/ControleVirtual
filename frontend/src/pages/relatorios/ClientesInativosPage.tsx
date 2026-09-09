@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { RelatorioClientesInativos } from "../../types";
 import { obterClientesInativos } from "../../services/relatorios";
 import { brl, dataBR, extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
@@ -18,8 +19,27 @@ const OPCOES = [
   { valor: 90, rotulo: "90+ dias" },
 ];
 
+const DIAS_PADRAO = 60;
+
+/** Janela pedida na URL (?dias=), quando é uma das opções oferecidas. */
+function diasIniciais(bruto: string | null): number {
+  const valor = Number(bruto);
+  return OPCOES.some((o) => o.valor === valor) ? valor : DIAS_PADRAO;
+}
+
 export default function ClientesInativosPage() {
-  const [dias, setDias] = useState(60);
+  // Quem chega pelo alerta do painel traz a janela no link, para o número da
+  // tela ser o mesmo que o alerta mostrou.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [dias, setDias] = useState(() => diasIniciais(searchParams.get("dias")));
+
+  // Mantém a URL em sincronia, para o filtro sobreviver a um recarregamento.
+  function trocarDias(valor: number) {
+    setDias(valor);
+    setSearchParams(valor === DIAS_PADRAO ? {} : { dias: String(valor) }, {
+      replace: true,
+    });
+  }
   const [dados, setDados] = useState<RelatorioClientesInativos | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -44,7 +64,7 @@ export default function ClientesInativosPage() {
       <RelatorioHeader
         titulo="Clientes inativos"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} opcoes={OPCOES} />}
+        acoes={<PeriodoTabs dias={dias} onChange={trocarDias} opcoes={OPCOES} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}
