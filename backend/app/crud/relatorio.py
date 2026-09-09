@@ -27,6 +27,13 @@ def _q(valor) -> Decimal:
     return Decimal(valor or 0).quantize(_CENTAVOS)
 
 
+def _pct(parte: Decimal, total: Decimal) -> Decimal:
+    """Percentual de `parte` sobre `total`, com 2 casas. Zero se total <= 0."""
+    if total <= 0:
+        return Decimal("0.00")
+    return (parte / total * 100).quantize(_CENTAVOS)
+
+
 class Periodo(NamedTuple):
     """Intervalo de datas fechado nas duas pontas, usado por todos os relatórios.
 
@@ -470,24 +477,38 @@ def kardex(db: Session, produto_id: int, periodo: Periodo) -> dict:
 
 
 def ranking_clientes(db: Session, periodo: Periodo, limite: int = 20) -> dict:
-    """Ranking de clientes por faturamento no período."""
+    """Ranking de clientes por faturamento no período.
+
+    Só entram no ranking as vendas com cliente identificado. As vendas de
+    balcão (sem cliente) somariam num único "cliente" que quase sempre lidera
+    a lista e achata os clientes reais, então elas saem do ranking e viram
+    informação à parte — que também serve de termômetro de quanto do
+    faturamento está sem dono.
+    """
     vendas = vendas_do_periodo(db, periodo)
 
     agregado: dict = {}
+    num_vendas_sem_cliente = 0
+    faturamento_sem_cliente = Decimal("0")
+
     for v in vendas:
-        chave = v.cliente_id if v.cliente_id is not None else "sem_cliente"
+        liquido = Decimal(v.total_liquido or 0)
+        if v.cliente_id is None:
+            num_vendas_sem_cliente += 1
+            faturamento_sem_cliente += liquido
+            continue
         registro = agregado.setdefault(
-            chave,
+            v.cliente_id,
             {
                 "cliente_id": v.cliente_id,
-                "cliente_nome": v.cliente_nome or "Sem cliente",
+                "cliente_nome": v.cliente_nome or f"Cliente #{v.cliente_id}",
                 "num_compras": 0,
                 "faturamento": Decimal("0"),
                 "ultima_compra": None,
             },
         )
         registro["num_compras"] += 1
-        registro["faturamento"] += v.total_liquido or 0
+        registro["faturamento"] += liquido
         if registro["ultima_compra"] is None or v.criado_em > registro["ultima_compra"]:
             registro["ultima_compra"] = v.criado_em
 
@@ -508,11 +529,19 @@ def ranking_clientes(db: Session, periodo: Periodo, limite: int = 20) -> dict:
         )
 
     linhas.sort(key=lambda x: x["faturamento"], reverse=True)
+
+    faturamento_identificado = sum((l["faturamento"] for l in linhas), Decimal("0"))
+    faturamento_total = faturamento_identificado + faturamento_sem_cliente
+
     return {
         "dias": periodo.dias,
         "inicio": periodo.inicio_data,
         "fim": periodo.fim_data,
         "qtd_clientes": len(linhas),
+        "faturamento_identificado": _q(faturamento_identificado),
+        "num_vendas_sem_cliente": num_vendas_sem_cliente,
+        "faturamento_sem_cliente": _q(faturamento_sem_cliente),
+        "percentual_sem_cliente": _pct(faturamento_sem_cliente, faturamento_total),
         "linhas": linhas[:limite],
     }
 

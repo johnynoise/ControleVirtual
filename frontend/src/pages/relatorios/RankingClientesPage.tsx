@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PeriodoRelatorio, RelatorioRankingClientes } from "../../types";
 import { obterRankingClientes } from "../../services/relatorios";
-import { brl, dataBR, extrairErro, PeriodoSeletor, RelatorioHeader } from "./lib";
+import { brl, dataBR, extrairErro, PeriodoSeletor, pct, RelatorioHeader } from "./lib";
 import { BarrasHorizontais } from "./Charts";
 
 const icone = (
@@ -50,7 +50,28 @@ export default function RankingClientesPage() {
           <span className="kpi-label">Clientes com compras</span>
           <span className="kpi-valor">{dados?.qtd_clientes ?? 0}</span>
         </div>
+        <div className="kpi">
+          <span className="kpi-label">Faturamento com cliente</span>
+          <span className="kpi-valor">{brl(dados?.faturamento_identificado ?? 0)}</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-label">Vendas de balcão</span>
+          <span className="kpi-valor">{dados?.num_vendas_sem_cliente ?? 0}</span>
+          <span className="kpi-sub">
+            {brl(dados?.faturamento_sem_cliente ?? 0)} ·{" "}
+            {pct(dados?.percentual_sem_cliente ?? 0)} do total
+          </span>
+        </div>
       </div>
+
+      {dados && dados.num_vendas_sem_cliente > 0 && (
+        <p className="subtitle">
+          As {dados.num_vendas_sem_cliente} vendas sem cliente identificado
+          ficam fora do ranking — somadas, elas apareceriam em primeiro lugar e
+          esconderiam os clientes de verdade. Identificar o cliente na venda
+          aumenta o alcance deste relatório.
+        </p>
+      )}
 
       {!carregando && linhas.length > 0 && (
         <div className="card">

@@ -596,6 +596,11 @@ export interface RelatorioRankingClientes {
   inicio: string;
   fim: string;
   qtd_clientes: number;
+  faturamento_identificado: string;
+  /** Vendas de balcão (sem cliente): ficam fora do ranking. */
+  num_vendas_sem_cliente: number;
+  faturamento_sem_cliente: string;
+  percentual_sem_cliente: string;
   linhas: RankingClienteLinha[];
 }
 

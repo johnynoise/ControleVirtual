@@ -159,6 +159,12 @@ class RelatorioRankingClientes(BaseModel):
     inicio: date
     fim: date
     qtd_clientes: int
+    faturamento_identificado: Decimal
+    # Vendas de balcão (sem cliente): ficam fora do ranking e viram termômetro
+    # de quanto do faturamento está sem dono.
+    num_vendas_sem_cliente: int
+    faturamento_sem_cliente: Decimal
+    percentual_sem_cliente: Decimal
     linhas: list[RankingClienteLinha]
 
 
