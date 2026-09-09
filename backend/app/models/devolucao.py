@@ -9,6 +9,7 @@ venda é marcada como cancelada (estornada).
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -34,6 +35,17 @@ class Devolucao(Base):
     # Motivo padronizado (ex.: defeito, nao_gostou...) + observação livre.
     motivo = Column(String(40), nullable=False)
     observacao = Column(Text, nullable=True)
+
+    # Peça com defeito: marca a troca para acerto com o fornecedor. Enquanto
+    # ``status_fornecedor`` estiver "pendente", a peça aparece na lista de
+    # defeitos a resolver com o fornecedor. Trocas sem defeito ficam com
+    # ``status_fornecedor`` nulo (não envolvem o fornecedor).
+    defeito = Column(Boolean, nullable=False, default=False, server_default="0")
+    status_fornecedor = Column(String(20), nullable=True, index=True)
+
+    # Baixa do acerto com o fornecedor (troca, crédito, recusa...).
+    resolvido_em = Column(DateTime(timezone=True), nullable=True)
+    resolucao_observacao = Column(Text, nullable=True)
 
     # Valor bruto devolvido (soma dos itens devolvidos).
     valor_devolvido = Column(Numeric(12, 2), nullable=False, default=0)

@@ -122,6 +122,12 @@ export default function ClienteFichaPage() {
               <span className="muted">Sem telefone</span>
             )}
             <span>{cliente.email ? `✉️ ${cliente.email}` : <span className="muted">Sem e-mail</span>}</span>
+            <span>
+              {cliente.endereco ? `📍 ${cliente.endereco}` : <span className="muted">Sem endereço</span>}
+            </span>
+            {cliente.data_nascimento && (
+              <span>🎂 {dataBR(cliente.data_nascimento)}</span>
+            )}
             <span className="muted">Cliente desde {dataBR(cliente.criado_em)}</span>
           </div>
 
@@ -227,7 +233,7 @@ export default function ClienteFichaPage() {
                           ) : c.a_prazo ? (
                             <span className="chip quitado">Fiado quitado</span>
                           ) : c.tem_devolucao ? (
-                            <span className="chip mov-ajuste">Devolução parcial</span>
+                            <span className="chip mov-ajuste">Troca parcial</span>
                           ) : (
                             <span className="chip mov-entrada">Concluída</span>
                           )}

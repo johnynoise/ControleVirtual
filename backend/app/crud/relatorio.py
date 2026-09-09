@@ -8,6 +8,7 @@ agregações no próprio banco.
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from typing import NamedTuple
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -26,25 +27,67 @@ def _q(valor) -> Decimal:
     return Decimal(valor or 0).quantize(_CENTAVOS)
 
 
-def _inicio_periodo(dias: int) -> datetime:
-    """Retorna a meia-noite de (hoje - (dias-1))."""
+class Periodo(NamedTuple):
+    """Intervalo de datas fechado nas duas pontas, usado por todos os relatórios.
+
+    Guarda os limites já como ``datetime`` (00:00:00 do primeiro dia e
+    23:59:59.999999 do último) para comparar direto com as colunas de data/hora
+    sem depender de funções de data do banco.
+    """
+
+    inicio: datetime
+    fim: datetime
+
+    @property
+    def inicio_data(self) -> date:
+        return self.inicio.date()
+
+    @property
+    def fim_data(self) -> date:
+        return self.fim.date()
+
+    @property
+    def dias(self) -> int:
+        """Quantidade de dias do intervalo, contando as duas pontas."""
+        return (self.fim.date() - self.inicio.date()).days + 1
+
+
+def periodo_entre(inicio: date, fim: date) -> Periodo:
+    """Período entre duas datas, incluindo o dia inicial e o final."""
+    return Periodo(
+        inicio=datetime.combine(inicio, time.min),
+        fim=datetime.combine(fim, time.max),
+    )
+
+
+def periodo_de_dias(dias: int) -> Periodo:
+    """Últimos ``dias`` dias, terminando hoje (hoje conta como o primeiro)."""
     dias = max(1, dias)
-    dia_inicial = date.today() - timedelta(days=dias - 1)
-    return datetime.combine(dia_inicial, time.min)
+    fim = date.today()
+    return periodo_entre(fim - timedelta(days=dias - 1), fim)
 
 
-def _vendas_periodo(db: Session, inicio: datetime) -> list[Venda]:
-    # Ignora vendas estornadas (canceladas) em todos os relatórios.
+def vendas_do_periodo(db: Session, periodo: Periodo) -> list[Venda]:
+    """Vendas que contam nos relatórios do período.
+
+    Fica de fora o que não é faturamento: vendas estornadas (canceladas) e
+    pedidos de entrega ainda pendentes, que nem baixaram estoque. O relatório
+    fiscal usa este mesmo recorte, para os números baterem entre as telas.
+    """
     return (
         db.query(Venda)
-        .filter(Venda.criado_em >= inicio, Venda.cancelada_em.is_(None))
+        .filter(
+            Venda.criado_em >= periodo.inicio,
+            Venda.criado_em <= periodo.fim,
+            Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
+        )
         .all()
     )
 
 
-def resumo(db: Session, dias: int) -> dict:
-    inicio = _inicio_periodo(dias)
-    vendas = _vendas_periodo(db, inicio)
+def resumo(db: Session, periodo: Periodo) -> dict:
+    vendas = vendas_do_periodo(db, periodo)
 
     faturamento = sum((v.total_liquido or 0) for v in vendas)
     custo = sum((v.custo_total or 0) for v in vendas)
@@ -60,8 +103,9 @@ def resumo(db: Session, dias: int) -> dict:
     margem = (lucro / faturamento * 100).quantize(_CENTAVOS) if faturamento > 0 else Decimal("0.00")
 
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "num_vendas": num,
         "faturamento": faturamento,
         "custo": custo,
@@ -72,9 +116,8 @@ def resumo(db: Session, dias: int) -> dict:
     }
 
 
-def vendas_por_dia(db: Session, dias: int) -> list[dict]:
-    inicio = _inicio_periodo(dias)
-    vendas = _vendas_periodo(db, inicio)
+def vendas_por_dia(db: Session, periodo: Periodo) -> list[dict]:
+    vendas = vendas_do_periodo(db, periodo)
 
     por_dia: dict[date, dict] = defaultdict(
         lambda: {"faturamento": Decimal("0"), "lucro": Decimal("0"), "num_vendas": 0}
@@ -87,8 +130,8 @@ def vendas_por_dia(db: Session, dias: int) -> list[dict]:
 
     # Preenche todos os dias do período, inclusive os sem venda (zerados).
     resultado: list[dict] = []
-    for i in range(dias):
-        d = inicio.date() + timedelta(days=i)
+    for i in range(periodo.dias):
+        d = periodo.inicio_data + timedelta(days=i)
         dados = por_dia.get(d)
         resultado.append(
             {
@@ -105,14 +148,15 @@ def vendas_por_dia(db: Session, dias: int) -> list[dict]:
     return resultado
 
 
-def mais_vendidos(db: Session, dias: int, limite: int = 10) -> dict:
-    inicio = _inicio_periodo(dias)
+def mais_vendidos(db: Session, periodo: Periodo, limite: int = 10) -> dict:
     itens = (
         db.query(ItemVenda)
         .join(Venda, ItemVenda.venda_id == Venda.id)
         .filter(
-            Venda.criado_em >= inicio,
+            Venda.criado_em >= periodo.inicio,
+            Venda.criado_em <= periodo.fim,
             Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
             ItemVenda.quantidade > 0,
         )
         .all()
@@ -190,10 +234,9 @@ _FORMAS_PAGAMENTO = {
 }
 
 
-def vendas_por_forma_pagamento(db: Session, dias: int) -> dict:
+def vendas_por_forma_pagamento(db: Session, periodo: Periodo) -> dict:
     """Mix de faturamento por forma de pagamento no período."""
-    inicio = _inicio_periodo(dias)
-    vendas = _vendas_periodo(db, inicio)
+    vendas = vendas_do_periodo(db, periodo)
 
     agregado: dict = defaultdict(
         lambda: {"num_vendas": 0, "faturamento": Decimal("0")}
@@ -221,26 +264,28 @@ def vendas_por_forma_pagamento(db: Session, dias: int) -> dict:
 
     linhas.sort(key=lambda x: x["faturamento"], reverse=True)
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "faturamento_total": _q(faturamento_total),
         "linhas": linhas,
     }
 
 
-def curva_abc(db: Session, dias: int) -> dict:
+def curva_abc(db: Session, periodo: Periodo) -> dict:
     """Curva ABC de produtos por faturamento no período.
 
     Classe A: produtos que somam até 80% do faturamento acumulado.
     Classe B: de 80% a 95%. Classe C: os demais.
     """
-    inicio = _inicio_periodo(dias)
     itens = (
         db.query(ItemVenda)
         .join(Venda, ItemVenda.venda_id == Venda.id)
         .filter(
-            Venda.criado_em >= inicio,
+            Venda.criado_em >= periodo.inicio,
+            Venda.criado_em <= periodo.fim,
             Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
             ItemVenda.quantidade > 0,
         )
         .all()
@@ -296,8 +341,9 @@ def curva_abc(db: Session, dias: int) -> dict:
         )
 
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "faturamento_total": _q(faturamento_total),
         "qtd_classe_a": contagem["A"],
         "qtd_classe_b": contagem["B"],
@@ -306,18 +352,18 @@ def curva_abc(db: Session, dias: int) -> dict:
     }
 
 
-def produtos_sem_giro(db: Session, dias: int) -> dict:
+def produtos_sem_giro(db: Session, periodo: Periodo) -> dict:
     """Produtos ativos sem nenhuma venda no período (capital parado)."""
-    inicio = _inicio_periodo(dias)
-
     # Produtos vendidos no período (para excluí-los da lista).
     vendidos_periodo = {
         pid
         for (pid,) in db.query(ItemVenda.produto_id)
         .join(Venda, ItemVenda.venda_id == Venda.id)
         .filter(
-            Venda.criado_em >= inicio,
+            Venda.criado_em >= periodo.inicio,
+            Venda.criado_em <= periodo.fim,
             Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
             ItemVenda.produto_id.isnot(None),
             ItemVenda.quantidade > 0,
         )
@@ -329,7 +375,11 @@ def produtos_sem_giro(db: Session, dias: int) -> dict:
     ultima_venda = dict(
         db.query(ItemVenda.produto_id, func.max(Venda.criado_em))
         .join(Venda, ItemVenda.venda_id == Venda.id)
-        .filter(ItemVenda.produto_id.isnot(None), Venda.cancelada_em.is_(None))
+        .filter(
+            ItemVenda.produto_id.isnot(None),
+            Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
+        )
         .group_by(ItemVenda.produto_id)
         .all()
     )
@@ -364,24 +414,25 @@ def produtos_sem_giro(db: Session, dias: int) -> dict:
     # Ordena por maior capital parado (mais relevante primeiro).
     linhas.sort(key=lambda x: x["valor_parado"], reverse=True)
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "qtd_produtos": len(linhas),
         "valor_parado_total": _q(valor_parado_total),
         "linhas": linhas,
     }
 
 
-def kardex(db: Session, produto_id: int, dias: int = 90) -> dict:
+def kardex(db: Session, produto_id: int, periodo: Periodo) -> dict:
     """Extrato de movimentações de estoque de um produto (entradas/saídas/ajustes)."""
     produto = db.get(Produto, produto_id)
-    inicio = _inicio_periodo(dias)
 
     movimentacoes = (
         db.query(MovimentacaoEstoque)
         .filter(
             MovimentacaoEstoque.produto_id == produto_id,
-            MovimentacaoEstoque.criado_em >= inicio,
+            MovimentacaoEstoque.criado_em >= periodo.inicio,
+            MovimentacaoEstoque.criado_em <= periodo.fim,
         )
         .order_by(MovimentacaoEstoque.criado_em.asc(), MovimentacaoEstoque.id.asc())
         .all()
@@ -408,8 +459,9 @@ def kardex(db: Session, produto_id: int, dias: int = 90) -> dict:
         "produto_id": produto_id,
         "produto_nome": produto.nome if produto else "(produto removido)",
         "estoque_atual": produto.estoque if produto else None,
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "total_entradas": total_entradas,
         "total_saidas": total_saidas,
         "num_movimentacoes": len(linhas),
@@ -417,10 +469,9 @@ def kardex(db: Session, produto_id: int, dias: int = 90) -> dict:
     }
 
 
-def ranking_clientes(db: Session, dias: int, limite: int = 20) -> dict:
+def ranking_clientes(db: Session, periodo: Periodo, limite: int = 20) -> dict:
     """Ranking de clientes por faturamento no período."""
-    inicio = _inicio_periodo(dias)
-    vendas = _vendas_periodo(db, inicio)
+    vendas = vendas_do_periodo(db, periodo)
 
     agregado: dict = {}
     for v in vendas:
@@ -458,21 +509,22 @@ def ranking_clientes(db: Session, dias: int, limite: int = 20) -> dict:
 
     linhas.sort(key=lambda x: x["faturamento"], reverse=True)
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "qtd_clientes": len(linhas),
         "linhas": linhas[:limite],
     }
 
 
-def compras_por_fornecedor(db: Session, dias: int) -> dict:
+def compras_por_fornecedor(db: Session, periodo: Periodo) -> dict:
     """Total comprado por fornecedor (entradas de estoque) no período."""
-    inicio = _inicio_periodo(dias)
     entradas = (
         db.query(MovimentacaoEstoque)
         .filter(
             MovimentacaoEstoque.tipo == "entrada",
-            MovimentacaoEstoque.criado_em >= inicio,
+            MovimentacaoEstoque.criado_em >= periodo.inicio,
+            MovimentacaoEstoque.criado_em <= periodo.fim,
             # Entradas de estorno/devolução não são compras.
             (MovimentacaoEstoque.motivo.is_(None))
             | ~MovimentacaoEstoque.motivo.in_(["estorno", "devolucao"]),
@@ -512,8 +564,9 @@ def compras_por_fornecedor(db: Session, dias: int) -> dict:
 
     valor_total_geral = sum((r["valor_total"] for r in linhas), Decimal("0"))
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "valor_total_geral": _q(valor_total_geral),
         "linhas": linhas,
     }
@@ -534,10 +587,9 @@ _DIAS_SEMANA = [
 ]
 
 
-def vendas_por_dia_semana_horario(db: Session, dias: int) -> dict:
+def vendas_por_dia_semana_horario(db: Session, periodo: Periodo) -> dict:
     """Distribui as vendas do período por dia da semana e por hora do dia."""
-    inicio = _inicio_periodo(dias)
-    vendas = _vendas_periodo(db, inicio)
+    vendas = vendas_do_periodo(db, periodo)
 
     por_semana = [
         {"indice": i, "rotulo": nome, "num_vendas": 0, "faturamento": Decimal("0")}
@@ -566,8 +618,9 @@ def vendas_por_dia_semana_horario(db: Session, dias: int) -> dict:
     melhor_hora = max(por_hora, key=lambda x: x["faturamento"], default=None)
 
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "por_dia_semana": por_semana,
         "por_hora": por_hora,
         "melhor_dia": melhor_dia["rotulo"] if melhor_dia and melhor_dia["num_vendas"] else None,
@@ -575,10 +628,9 @@ def vendas_por_dia_semana_horario(db: Session, dias: int) -> dict:
     }
 
 
-def descontos(db: Session, dias: int) -> dict:
+def descontos(db: Session, periodo: Periodo) -> dict:
     """Resumo dos descontos concedidos e as vendas que os tiveram."""
-    inicio = _inicio_periodo(dias)
-    vendas = _vendas_periodo(db, inicio)
+    vendas = vendas_do_periodo(db, periodo)
 
     total_bruto = sum((v.total_bruto or 0) for v in vendas)
     total_desconto = sum((v.desconto or 0) for v in vendas)
@@ -610,8 +662,9 @@ def descontos(db: Session, dias: int) -> dict:
         )
 
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "num_vendas": len(vendas),
         "num_vendas_com_desconto": len(com_desconto),
         "total_bruto": total_bruto,
@@ -621,15 +674,16 @@ def descontos(db: Session, dias: int) -> dict:
     }
 
 
-def vendas_por_categoria(db: Session, dias: int) -> dict:
+def vendas_por_categoria(db: Session, periodo: Periodo) -> dict:
     """Agrega faturamento, lucro e quantidade por categoria de produto."""
-    inicio = _inicio_periodo(dias)
     itens = (
         db.query(ItemVenda)
         .join(Venda, ItemVenda.venda_id == Venda.id)
         .filter(
-            Venda.criado_em >= inicio,
+            Venda.criado_em >= periodo.inicio,
+            Venda.criado_em <= periodo.fim,
             Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
             ItemVenda.quantidade > 0,
         )
         .all()
@@ -681,19 +735,22 @@ def vendas_por_categoria(db: Session, dias: int) -> dict:
 
     linhas.sort(key=lambda x: x["faturamento"], reverse=True)
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "faturamento_total": _q(faturamento_total),
         "linhas": linhas,
     }
 
 
-def perdas_e_ajustes(db: Session, dias: int) -> dict:
+def perdas_e_ajustes(db: Session, periodo: Periodo) -> dict:
     """Movimentações de perda, quebra, inventário e ajustes (fora de venda/compra)."""
-    inicio = _inicio_periodo(dias)
     movs = (
         db.query(MovimentacaoEstoque)
-        .filter(MovimentacaoEstoque.criado_em >= inicio)
+        .filter(
+            MovimentacaoEstoque.criado_em >= periodo.inicio,
+            MovimentacaoEstoque.criado_em <= periodo.fim,
+        )
         .filter(
             (MovimentacaoEstoque.tipo == "ajuste")
             | (
@@ -737,25 +794,26 @@ def perdas_e_ajustes(db: Session, dias: int) -> dict:
         )
 
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "num_movimentacoes": len(linhas),
         "valor_perdas_estimado": _q(valor_perdas),
         "linhas": linhas,
     }
 
 
-def giro_e_cobertura(db: Session, dias: int) -> dict:
+def giro_e_cobertura(db: Session, periodo: Periodo) -> dict:
     """Giro e cobertura (dias de estoque) por produto ativo no período."""
-    inicio = _inicio_periodo(dias)
-
     # Quantidade vendida por produto no período.
     vendido = dict(
         db.query(ItemVenda.produto_id, func.sum(ItemVenda.quantidade))
         .join(Venda, ItemVenda.venda_id == Venda.id)
         .filter(
-            Venda.criado_em >= inicio,
+            Venda.criado_em >= periodo.inicio,
+            Venda.criado_em <= periodo.fim,
             Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
             ItemVenda.produto_id.isnot(None),
             ItemVenda.quantidade > 0,
         )
@@ -764,7 +822,7 @@ def giro_e_cobertura(db: Session, dias: int) -> dict:
     )
 
     produtos = db.query(Produto).filter(Produto.ativo.is_(True)).all()
-    dias_periodo = max(1, dias)
+    dias_periodo = periodo.dias
 
     linhas = []
     for p in produtos:
@@ -791,15 +849,21 @@ def giro_e_cobertura(db: Session, dias: int) -> dict:
     # produtos sem venda vão para o fim.
     linhas.sort(key=lambda x: (x["cobertura_dias"] is None, x["cobertura_dias"] or 0))
     return {
-        "dias": dias,
-        "inicio": inicio.date(),
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
         "qtd_produtos": len(linhas),
         "linhas": linhas,
     }
 
 
 def clientes_inativos(db: Session, dias: int) -> dict:
-    """Clientes ativos sem comprar há mais de `dias` (inclui quem nunca comprou)."""
+    """Clientes ativos sem comprar há mais de `dias` (inclui quem nunca comprou).
+
+    Aqui ``dias`` não é um recorte de período como nos outros relatórios: é a
+    janela de inatividade contada a partir de hoje. Por isso este relatório não
+    recebe um ``Periodo``.
+    """
     # Estatísticas de compra por cliente (todo o histórico).
     stats = {
         cid: {"ultima": ultima, "num": num, "total": total or Decimal("0")}
@@ -809,7 +873,11 @@ def clientes_inativos(db: Session, dias: int) -> dict:
             func.count(Venda.id),
             func.sum(Venda.total_liquido),
         )
-        .filter(Venda.cliente_id.isnot(None), Venda.cancelada_em.is_(None))
+        .filter(
+            Venda.cliente_id.isnot(None),
+            Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
+        )
         .group_by(Venda.cliente_id)
     }
 

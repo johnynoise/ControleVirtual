@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormaRecebimento, Venda } from "../types";
 import { registrarPagamento } from "../services/vendas";
 import { useToast } from "./Feedback";
-import { brl, dataHora, extrairErro } from "../lib/ui";
+import { statusParcelas } from "../lib/fiado";
+import { brl, dataBR, dataHora, extrairErro } from "../lib/ui";
 
 const FORMAS: { valor: FormaRecebimento; rotulo: string }[] = [
   { valor: "dinheiro", rotulo: "Dinheiro" },
@@ -26,13 +27,37 @@ export default function ReceberPagamentoModal({
   const toast = useToast();
   const saldo = parseFloat(venda.saldo_devedor) || 0;
 
-  const [valor, setValor] = useState(venda.saldo_devedor);
+  // Situação de cada parcela em relação ao total já pago (ver lib/fiado).
+  const parcelasInfo = useMemo(() => statusParcelas(venda), [venda]);
+
+  const temParcelas = parcelasInfo.length > 0;
+  const primeiraAberta = parcelasInfo.find((p) => p.status !== "paga");
+
+  const [valor, setValor] = useState(
+    primeiraAberta ? primeiraAberta.restante.toFixed(2) : venda.saldo_devedor
+  );
+  const [parcelaSel, setParcelaSel] = useState<number | null>(
+    primeiraAberta?.numero ?? null
+  );
   const [forma, setForma] = useState<FormaRecebimento>("dinheiro");
   const [obs, setObs] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
   const valorNum = parseFloat(valor) || 0;
+
+  function selecionarParcela(numero: number, restante: number) {
+    setParcelaSel(numero);
+    setValor(restante.toFixed(2));
+    setErro(null);
+  }
+
+  function alterarValor(novo: string) {
+    setValor(novo);
+    // Edição manual "desvincula" da parcela selecionada (o valor pode ser
+    // diferente do exato da parcela, ex.: cliente pagou a mais).
+    setParcelaSel(null);
+  }
 
   async function confirmar() {
     if (valorNum <= 0) {
@@ -67,6 +92,7 @@ export default function ReceberPagamentoModal({
 
   function preencherTotal() {
     setValor(venda.saldo_devedor);
+    setParcelaSel(null);
   }
 
   return (
@@ -95,6 +121,47 @@ export default function ReceberPagamentoModal({
           </div>
         </div>
 
+        {temParcelas && (
+          <div className="receber-parcelas">
+            <span className="pdv-label">Parcelas — toque para preencher o valor</span>
+            <ul className="receber-parcelas-lista">
+              {parcelasInfo.map((p) => {
+                const paga = p.status === "paga";
+                const selecionada = parcelaSel === p.numero;
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      className={`receber-parcela${selecionada ? " ativo" : ""}${paga ? " paga" : ""}`}
+                      onClick={() => selecionarParcela(p.numero, p.restante)}
+                      disabled={paga}
+                    >
+                      <span className="receber-parcela-info">
+                        <strong>{p.numero}ª parcela</strong>
+                        <span className="muted">vence {dataBR(p.vencimento)}</span>
+                      </span>
+                      <span className="receber-parcela-valor">
+                        {brl(p.valorNum)}
+                        {p.status === "paga" && (
+                          <span className="chip quitado">
+                            {p.pagoEm ? `Paga em ${dataBR(p.pagoEm)}` : "Paga"}
+                          </span>
+                        )}
+                        {p.status === "parcial" && (
+                          <span className="chip fiado">Falta {brl(p.restante)}</span>
+                        )}
+                        {p.status === "aberta" && (
+                          <span className="chip mov-ajuste">Em aberto</span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         <div className="grid-2" style={{ marginTop: "1rem" }}>
           <label>
             Valor recebido (R$)
@@ -106,7 +173,7 @@ export default function ReceberPagamentoModal({
                 max={saldo}
                 value={valor}
                 autoFocus
-                onChange={(e) => setValor(e.target.value)}
+                onChange={(e) => alterarValor(e.target.value)}
               />
               <button
                 type="button"

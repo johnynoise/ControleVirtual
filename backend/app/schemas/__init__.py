@@ -7,6 +7,19 @@ from app.schemas.categoria import (
     TipoCampo,
 )
 from app.schemas.cliente import ClienteCreate, ClienteOut, ClienteUpdate
+from app.schemas.configuracao import (
+    ConfiguracaoOut,
+    ConfiguracaoUpdate,
+    RegimeTributario,
+    TipoPessoa,
+)
+from app.schemas.despesa import (
+    CategoriaDespesa,
+    DespesaCreate,
+    DespesaOut,
+    DespesaUpdate,
+    ResumoDespesas,
+)
 from app.schemas.fornecedor import (
     FornecedorCreate,
     FornecedorOut,
@@ -57,4 +70,13 @@ __all__ = [
     "ClienteCreate",
     "ClienteUpdate",
     "ClienteOut",
+    "CategoriaDespesa",
+    "DespesaCreate",
+    "DespesaUpdate",
+    "DespesaOut",
+    "ResumoDespesas",
+    "ConfiguracaoOut",
+    "ConfiguracaoUpdate",
+    "TipoPessoa",
+    "RegimeTributario",
 ]

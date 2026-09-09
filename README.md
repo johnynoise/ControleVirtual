@@ -27,10 +27,26 @@ servidor); PostgreSQL é opcional para produção.
 - **Cadastros:** categorias (com campos dinâmicos por categoria), fornecedores
   e clientes — clientes têm **ficha** com histórico de compras, favoritos e
   atalho de contato.
+- **Despesas:** lançamento das saídas que não são compra de mercadoria (aluguel,
+  energia, embalagem, taxa de maquininha, imposto, retirada do dono), com
+  categoria, competência e data de pagamento, totais por categoria e mês a mês.
+- **Cadastro do negócio:** dados fiscais da loja em Configurações (tipo de
+  pessoa, CPF/CNPJ, razão social, regime tributário, inscrições, CNAE, endereço
+  e contador). Todos os campos são opcionais: quem vende como pessoa física
+  preenche só o que se aplica.
+- **Relatório fiscal:** consolidado do ano-calendário para levar ao contador —
+  receita mês a mês (por competência e por caixa), recebimentos por forma de
+  pagamento, CMV, compras por fornecedor com CNPJ, perdas, despesas por
+  categoria, estoque, contas a receber em aberto e a apuração do resultado.
+  Exporta em CSV e imprime. Não calcula imposto: o enquadramento e a apuração
+  dependem do regime tributário.
 - **Dashboard:** visão geral do período com indicadores e gráficos (Recharts).
 - **Relatórios:** curva ABC, giro e sem giro, ranking de clientes, clientes
   inativos, forma de pagamento, compras por fornecedor, vendas por dia/horário
-  e por categoria, descontos e perdas.
+  e por categoria, descontos e perdas. Cada relatório aceita os atalhos de
+  últimos N dias ou um **intervalo de datas** personalizado (`?dias=30` ou
+  `?inicio=2026-01-01&fim=2026-12-31`), o que permite fechar um mês ou um
+  ano-calendário.
 
 ## Estrutura do projeto
 

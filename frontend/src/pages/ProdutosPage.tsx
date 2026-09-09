@@ -26,6 +26,8 @@ interface FormState {
   categoria_id: number | "";
   preco_custo: string;
   preco_venda: string;
+  // Vazio = sem preço a prazo próprio; a venda a prazo usa o preço à vista.
+  preco_venda_prazo: string;
   estoque: string;
   estoque_minimo: string;
   ativo: boolean;
@@ -40,6 +42,7 @@ function formVazio(): FormState {
     categoria_id: "",
     preco_custo: "0",
     preco_venda: "0",
+    preco_venda_prazo: "",
     estoque: "0",
     estoque_minimo: "0",
     ativo: true,
@@ -55,6 +58,7 @@ type CampoProduto =
   | "categoria"
   | "preco_custo"
   | "preco_venda"
+  | "preco_venda_prazo"
   | "margem_percentual"
   | "estoque_total";
 
@@ -152,6 +156,8 @@ export default function ProdutosPage() {
             return parseNumero(p.preco_custo);
           case "preco_venda":
             return parseNumero(p.preco_venda);
+          case "preco_venda_prazo":
+            return parseNumero(p.preco_venda_prazo_efetivo);
           case "margem_percentual":
             return parseNumero(p.margem_percentual);
           case "estoque_total":
@@ -194,6 +200,7 @@ export default function ProdutosPage() {
       categoria_id: p.categoria_id,
       preco_custo: p.preco_custo,
       preco_venda: p.preco_venda,
+      preco_venda_prazo: p.preco_venda_prazo ?? "",
       estoque: String(p.estoque),
       estoque_minimo: String(p.estoque_minimo),
       ativo: p.ativo,
@@ -245,6 +252,12 @@ export default function ProdutosPage() {
       categoria_id: form.categoria_id,
       preco_custo: parseNumero(form.preco_custo),
       preco_venda: parseNumero(form.preco_venda),
+      // Campo vazio significa "não tem preço a prazo próprio" — manda null
+      // para o backend cair no preço à vista.
+      preco_venda_prazo:
+        form.preco_venda_prazo.trim() === ""
+          ? null
+          : parseNumero(form.preco_venda_prazo),
       estoque: parseInt(form.estoque, 10) || 0,
       estoque_minimo: parseInt(form.estoque_minimo, 10) || 0,
       ativo: form.ativo,
@@ -423,6 +436,9 @@ export default function ProdutosPage() {
                 <ThOrdenavel campo="preco_venda" estado={ord} onOrdenar={ordenarPor} className="num">
                   Venda
                 </ThOrdenavel>
+                <ThOrdenavel campo="preco_venda_prazo" estado={ord} onOrdenar={ordenarPor} className="num">
+                  A prazo
+                </ThOrdenavel>
                 <ThOrdenavel campo="margem_percentual" estado={ord} onOrdenar={ordenarPor} className="num">
                   Margem
                 </ThOrdenavel>
@@ -442,6 +458,12 @@ export default function ProdutosPage() {
                   <td>{nomeCategoria(p.categoria_id)}</td>
                   <td className="num">R$ {p.preco_custo}</td>
                   <td className="num">R$ {p.preco_venda}</td>
+                  <td className="num">
+                    R$ {p.preco_venda_prazo_efetivo}
+                    {p.preco_venda_prazo == null && (
+                      <div className="muted">mesmo à vista</div>
+                    )}
+                  </td>
                   <td className="num">{p.margem_percentual}%</td>
                   <td className="num">
                     {p.estoque_total}
@@ -551,6 +573,24 @@ export default function ProdutosPage() {
                   onChange={(e) => setCampo("preco_venda", e.target.value)}
                 />
               </label>
+            </div>
+
+            <div className="grid-2">
+              <label>
+                Preço a prazo (fiado)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={form.preco_venda_prazo}
+                  onChange={(e) => setCampo("preco_venda_prazo", e.target.value)}
+                  placeholder={`Opcional — sem isso usa R$ ${form.preco_venda}`}
+                />
+                <small className="muted">
+                  Usado quando a venda é no fiado. Deixe vazio para cobrar o
+                  mesmo preço à vista.
+                </small>
+              </label>
+              <div />
             </div>
 
             <div className="grid-2">

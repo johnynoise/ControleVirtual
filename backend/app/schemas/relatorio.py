@@ -1,4 +1,10 @@
-"""Schemas Pydantic dos relatórios (dashboard)."""
+"""Schemas Pydantic dos relatórios (dashboard).
+
+Os relatórios de período devolvem sempre ``inicio``, ``fim`` e ``dias`` (a
+quantidade de dias do intervalo, contando as duas pontas). Assim a tela sabe
+exatamente qual recorte foi usado, tanto quando ela pede "últimos N dias" como
+quando informa um intervalo de datas.
+"""
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -10,6 +16,7 @@ class ResumoPeriodo(BaseModel):
 
     dias: int
     inicio: date
+    fim: date
     num_vendas: int
     faturamento: Decimal  # soma dos totais líquidos
     custo: Decimal
@@ -70,6 +77,7 @@ class FormaPagamentoLinha(BaseModel):
 class RelatorioFormaPagamento(BaseModel):
     dias: int
     inicio: date
+    fim: date
     faturamento_total: Decimal
     linhas: list[FormaPagamentoLinha]
 
@@ -87,6 +95,7 @@ class CurvaAbcLinha(BaseModel):
 class RelatorioCurvaAbc(BaseModel):
     dias: int
     inicio: date
+    fim: date
     faturamento_total: Decimal
     qtd_classe_a: int
     qtd_classe_b: int
@@ -106,6 +115,7 @@ class SemGiroLinha(BaseModel):
 class RelatorioSemGiro(BaseModel):
     dias: int
     inicio: date
+    fim: date
     qtd_produtos: int
     valor_parado_total: Decimal
     linhas: list[SemGiroLinha]
@@ -128,6 +138,7 @@ class RelatorioKardex(BaseModel):
     estoque_atual: int | None
     dias: int
     inicio: date
+    fim: date
     total_entradas: int
     total_saidas: int
     num_movimentacoes: int
@@ -146,6 +157,7 @@ class RankingClienteLinha(BaseModel):
 class RelatorioRankingClientes(BaseModel):
     dias: int
     inicio: date
+    fim: date
     qtd_clientes: int
     linhas: list[RankingClienteLinha]
 
@@ -161,6 +173,7 @@ class ComprasFornecedorLinha(BaseModel):
 class RelatorioComprasFornecedor(BaseModel):
     dias: int
     inicio: date
+    fim: date
     valor_total_geral: Decimal
     linhas: list[ComprasFornecedorLinha]
 
@@ -186,6 +199,7 @@ class HoraLinha(BaseModel):
 class RelatorioVendasDiaHorario(BaseModel):
     dias: int
     inicio: date
+    fim: date
     por_dia_semana: list[DiaSemanaLinha]
     por_hora: list[HoraLinha]
     melhor_dia: str | None
@@ -205,6 +219,7 @@ class DescontoLinha(BaseModel):
 class RelatorioDescontos(BaseModel):
     dias: int
     inicio: date
+    fim: date
     num_vendas: int
     num_vendas_com_desconto: int
     total_bruto: Decimal
@@ -225,6 +240,7 @@ class CategoriaLinha(BaseModel):
 class RelatorioVendasCategoria(BaseModel):
     dias: int
     inicio: date
+    fim: date
     faturamento_total: Decimal
     linhas: list[CategoriaLinha]
 
@@ -243,6 +259,7 @@ class PerdaLinha(BaseModel):
 class RelatorioPerdas(BaseModel):
     dias: int
     inicio: date
+    fim: date
     num_movimentacoes: int
     valor_perdas_estimado: Decimal
     linhas: list[PerdaLinha]
@@ -260,6 +277,7 @@ class GiroLinha(BaseModel):
 class RelatorioGiro(BaseModel):
     dias: int
     inicio: date
+    fim: date
     qtd_produtos: int
     linhas: list[GiroLinha]
 

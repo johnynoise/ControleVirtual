@@ -49,6 +49,15 @@ class Venda(Base):
     cancelada_em = Column(DateTime(timezone=True), nullable=True, index=True)
     motivo_cancelamento = Column(String(200), nullable=True)
 
+    # Entrega (delivery). Quando `entrega_status` é "pendente", a venda é um
+    # pedido ainda não realizado: NÃO baixou estoque nem gerou movimentação e
+    # não conta em relatórios/faturamento. Ao confirmar a entrega, o estoque é
+    # baixado e a venda passa a valer (status "entregue"). Vendas normais (balcão)
+    # ficam com `entrega_status` nulo.
+    entrega_status = Column(String(20), nullable=True, index=True)
+    entregue_em = Column(DateTime(timezone=True), nullable=True)
+    endereco_entrega = Column(String(300), nullable=True)
+
     # Usa hora local (datetime.now) para o dashboard agrupar "hoje" corretamente,
     # de forma consistente entre SQLite e PostgreSQL.
     criado_em = Column(
@@ -78,6 +87,13 @@ class Venda(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="PagamentoVenda.criado_em",
+    )
+    parcelas = relationship(
+        "ParcelaVenda",
+        back_populates="venda",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ParcelaVenda.numero",
     )
     cliente = relationship("Cliente")
 

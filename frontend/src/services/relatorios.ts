@@ -1,31 +1,44 @@
 import { api } from "./api";
 import type {
   MaisVendidos,
+  PeriodoRelatorio,
   ResumoEstoque,
   ResumoPeriodo,
   VendaDia,
 } from "../types";
 
-export async function obterResumo(dias: number): Promise<ResumoPeriodo> {
+/**
+ * Traduz o período em query params da API: `{ dias }` vira `?dias=`,
+ * `{ inicio, fim }` vira `?inicio=&fim=`.
+ */
+function params(periodo: PeriodoRelatorio): Record<string, string | number> {
+  return "dias" in periodo
+    ? { dias: periodo.dias }
+    : { inicio: periodo.inicio, fim: periodo.fim };
+}
+
+export async function obterResumo(periodo: PeriodoRelatorio): Promise<ResumoPeriodo> {
   const { data } = await api.get<ResumoPeriodo>("/relatorios/resumo", {
-    params: { dias },
+    params: params(periodo),
   });
   return data;
 }
 
-export async function obterVendasPorDia(dias: number): Promise<VendaDia[]> {
+export async function obterVendasPorDia(
+  periodo: PeriodoRelatorio
+): Promise<VendaDia[]> {
   const { data } = await api.get<VendaDia[]>("/relatorios/vendas-por-dia", {
-    params: { dias },
+    params: params(periodo),
   });
   return data;
 }
 
 export async function obterMaisVendidos(
-  dias: number,
+  periodo: PeriodoRelatorio,
   limite = 5
 ): Promise<MaisVendidos> {
   const { data } = await api.get<MaisVendidos>("/relatorios/mais-vendidos", {
-    params: { dias, limite },
+    params: { ...params(periodo), limite },
   });
   return data;
 }
@@ -46,56 +59,60 @@ import type {
 } from "../types";
 
 export async function obterFormaPagamento(
-  dias: number
+  periodo: PeriodoRelatorio
 ): Promise<RelatorioFormaPagamento> {
   const { data } = await api.get<RelatorioFormaPagamento>(
     "/relatorios/forma-pagamento",
-    { params: { dias } }
+    { params: params(periodo) }
   );
   return data;
 }
 
-export async function obterCurvaAbc(dias: number): Promise<RelatorioCurvaAbc> {
+export async function obterCurvaAbc(
+  periodo: PeriodoRelatorio
+): Promise<RelatorioCurvaAbc> {
   const { data } = await api.get<RelatorioCurvaAbc>("/relatorios/curva-abc", {
-    params: { dias },
+    params: params(periodo),
   });
   return data;
 }
 
-export async function obterSemGiro(dias: number): Promise<RelatorioSemGiro> {
+export async function obterSemGiro(
+  periodo: PeriodoRelatorio
+): Promise<RelatorioSemGiro> {
   const { data } = await api.get<RelatorioSemGiro>("/relatorios/sem-giro", {
-    params: { dias },
+    params: params(periodo),
   });
   return data;
 }
 
 export async function obterKardex(
   produtoId: number,
-  dias: number
+  periodo: PeriodoRelatorio
 ): Promise<RelatorioKardex> {
   const { data } = await api.get<RelatorioKardex>("/relatorios/kardex", {
-    params: { produto_id: produtoId, dias },
+    params: { produto_id: produtoId, ...params(periodo) },
   });
   return data;
 }
 
 export async function obterRankingClientes(
-  dias: number,
+  periodo: PeriodoRelatorio,
   limite = 20
 ): Promise<RelatorioRankingClientes> {
   const { data } = await api.get<RelatorioRankingClientes>(
     "/relatorios/ranking-clientes",
-    { params: { dias, limite } }
+    { params: { ...params(periodo), limite } }
   );
   return data;
 }
 
 export async function obterComprasFornecedor(
-  dias: number
+  periodo: PeriodoRelatorio
 ): Promise<RelatorioComprasFornecedor> {
   const { data } = await api.get<RelatorioComprasFornecedor>(
     "/relatorios/compras-fornecedor",
-    { params: { dias } }
+    { params: params(periodo) }
   );
   return data;
 }
@@ -111,48 +128,56 @@ import type {
 } from "../types";
 
 export async function obterVendasDiaHorario(
-  dias: number
+  periodo: PeriodoRelatorio
 ): Promise<RelatorioVendasDiaHorario> {
   const { data } = await api.get<RelatorioVendasDiaHorario>(
     "/relatorios/vendas-dia-horario",
-    { params: { dias } }
+    { params: params(periodo) }
   );
   return data;
 }
 
 export async function obterDescontos(
-  dias: number
+  periodo: PeriodoRelatorio
 ): Promise<RelatorioDescontos> {
   const { data } = await api.get<RelatorioDescontos>("/relatorios/descontos", {
-    params: { dias },
+    params: params(periodo),
   });
   return data;
 }
 
 export async function obterVendasCategoria(
-  dias: number
+  periodo: PeriodoRelatorio
 ): Promise<RelatorioVendasCategoria> {
   const { data } = await api.get<RelatorioVendasCategoria>(
     "/relatorios/vendas-categoria",
-    { params: { dias } }
+    { params: params(periodo) }
   );
   return data;
 }
 
-export async function obterPerdas(dias: number): Promise<RelatorioPerdas> {
+export async function obterPerdas(
+  periodo: PeriodoRelatorio
+): Promise<RelatorioPerdas> {
   const { data } = await api.get<RelatorioPerdas>("/relatorios/perdas", {
-    params: { dias },
+    params: params(periodo),
   });
   return data;
 }
 
-export async function obterGiro(dias: number): Promise<RelatorioGiro> {
+export async function obterGiro(
+  periodo: PeriodoRelatorio
+): Promise<RelatorioGiro> {
   const { data } = await api.get<RelatorioGiro>("/relatorios/giro", {
-    params: { dias },
+    params: params(periodo),
   });
   return data;
 }
 
+/**
+ * Clientes inativos. Aqui `dias` é a janela de inatividade contada de hoje,
+ * não um recorte de período — por isso não usa `PeriodoRelatorio`.
+ */
 export async function obterClientesInativos(
   dias: number
 ): Promise<RelatorioClientesInativos> {

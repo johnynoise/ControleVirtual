@@ -309,6 +309,14 @@ body {
   margin-bottom: 1rem;
 }
 
+/* CEP / cidade / UF: a UF é curta e não precisa da mesma largura. */
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.4fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .grid-4 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -624,6 +632,50 @@ body {
   background: var(--surface);
   color: var(--azul-escuro);
   box-shadow: var(--sombra);
+}
+
+/* Seletor de período dos relatórios: atalhos + intervalo personalizado. */
+.periodo-seletor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.periodo-intervalo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.periodo-intervalo label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.periodo-intervalo input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.periodo-intervalo input:focus {
+  outline: none;
+  border-color: var(--azul);
+}
+
+.periodo-intervalo-erro {
+  font-size: 0.82rem;
+  color: var(--vermelho);
 }
 
 .kpis {
@@ -1145,6 +1197,117 @@ body {
 
 
 /* ------------------------------------------------------------------ */
+/* Relatório fiscal                                                    */
+/* ------------------------------------------------------------------ */
+.fiscal-acoes {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fiscal-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.fiscal-cabecalho h2 {
+  margin: 0 0 0.25rem;
+}
+
+.fiscal-cabecalho-periodo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+/* Identificação fiscal: pares rótulo/valor que só aparecem se preenchidos. */
+.fiscal-identificacao {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.5rem;
+  margin: 0.75rem 0 0.5rem;
+}
+
+.fiscal-identificacao div {
+  display: flex;
+  flex-direction: column;
+}
+
+.fiscal-identificacao dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.fiscal-identificacao dd {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.fiscal-contato {
+  margin-top: 0.25rem;
+}
+
+/* Nos blocos do fiscal os KPIs são auxiliares: cabem mais por linha. */
+.fiscal-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin: 1.25rem 0 0;
+}
+
+.fiscal-folha h3 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+/* Encadeamento da apuração: subtotais e total destacados. */
+.fiscal-dre td {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.fiscal-dre .fiscal-dre-subtotal td,
+.fiscal-dre .fiscal-dre-total td {
+  font-weight: 700;
+  border-top: 1px solid var(--border);
+}
+
+.fiscal-dre .fiscal-dre-total td {
+  border-top: 2px solid var(--text);
+  font-size: 1.05rem;
+}
+
+.fiscal-avisos ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.fiscal-avisos li + li {
+  margin-top: 0.5rem;
+}
+
+/* Na impressão a folha ocupa a página inteira, sem cartões flutuando. */
+@media print {
+  .fiscal-folha .card {
+    box-shadow: none;
+    border: none;
+    padding: 0;
+    margin-bottom: 1.5rem;
+    break-inside: avoid;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Seção Relatórios                                                    */
 /* ------------------------------------------------------------------ */
 .voltar-link {
@@ -1304,6 +1467,13 @@ a.relatorio-card:hover {
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* `.tabela th, .tabela td` força text-align:left com especificidade maior que
+   `.num`; reforçamos aqui para as colunas numéricas alinharem à direita. */
+.tabela th.num,
+.tabela td.num {
+  text-align: right;
 }
 
 td.verde,
@@ -1684,17 +1854,27 @@ td.vermelho,
   font-size: 0.85rem;
 }
 
-/* Lista de itens do carrinho (rola se passar da altura). */
+/* Corpo rolável do carrinho: itens + cliente + pagamento + parcelas + totais.
+   Rola em conjunto quando o conteúdo passa da altura do card, mantendo o botão
+   de finalizar sempre visível (fixo) no rodapé. */
+.pdv-carrinho-corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  margin: 0 -0.25rem;
+  padding: 0 0.25rem;
+}
+
+/* Lista de itens do carrinho. */
 .pdv-itens {
   list-style: none;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  overflow-y: auto;
-  margin: 0 -0.25rem 0.5rem;
-  padding: 0 0.25rem;
-  flex: 1;
-  min-height: 60px;
+  margin: 0 0 0.5rem;
+  flex: 0 0 auto;
 }
 
 .pdv-item {
@@ -2486,6 +2666,691 @@ kbd {
 .pdv-fiado-aviso.alerta {
   color: var(--ambar);
   background: var(--ambar-suave);
+}
+
+/* Parcelamento de venda a prazo (fiado). */
+.pdv-parcelamento {
+  margin-top: 0.75rem;
+}
+
+.pdv-parcelas-opcoes {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.pdv-parcela-opcao {
+  flex: 1;
+  padding: 0.45rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.pdv-parcela-opcao:hover {
+  border-color: var(--azul);
+}
+
+.pdv-parcela-opcao.ativo {
+  background: var(--azul-suave);
+  border-color: var(--azul);
+  color: var(--azul);
+}
+
+.pdv-parcelas-lista {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pdv-parcela-linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.pdv-parcela-rotulo {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.pdv-parcela-rotulo strong {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.pdv-parcela-data {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.pdv-parcela-data input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+/* Detalhe expandido das compras fiado, na tela de contas a receber. */
+.tabela tr.linha-expandida > td {
+  border-bottom: none;
+}
+
+.fiado-detalhe-linha > td {
+  padding: 0;
+  background: var(--surface-2);
+}
+
+.fiado-compras {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+}
+
+.fiado-compra {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  padding: 0.7rem 0.85rem;
+}
+
+.fiado-compra-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.fiado-compra-titulo {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fiado-compra-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Seleção de parcela no modal de recebimento. */
+.receber-parcelas {
+  margin-top: 1rem;
+}
+
+.receber-parcelas-lista {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.receber-parcela {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.receber-parcela:hover:not(:disabled) {
+  border-color: var(--azul);
+}
+
+.receber-parcela.ativo {
+  border-color: var(--azul);
+  background: var(--azul-suave);
+}
+
+.receber-parcela.paga {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.receber-parcela-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.85rem;
+}
+
+.receber-parcela-valor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.fiado-compra-saldo {
+  font-size: 0.85rem;
+}
+
+.fiado-itens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.fiado-itens li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+}
+
+.fiado-item-qtd {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.2rem;
+}
+
+.fiado-item-nome {
+  flex: 1;
+  color: var(--text);
+}
+
+.fiado-item-subtotal {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.fiado-parcelas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--border);
+}
+
+.fiado-parcela-chip {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.fiado-parcela-chip.paga {
+  background: var(--verde-suave);
+  border-color: transparent;
+  color: var(--verde);
+}
+
+.fiado-parcela-chip.vencida {
+  background: var(--vermelho-suave);
+  border-color: transparent;
+  color: var(--vermelho);
+  font-weight: 600;
+}
+
+/* Chip "Delivery" no histórico de vendas. */
+.chip.delivery {
+  background: var(--azul-suave);
+  color: var(--azul);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Histórico de vendas — lista                                         */
+/* ------------------------------------------------------------------ */
+.avatar.avatar-sm {
+  width: 30px;
+  height: 30px;
+  font-size: 0.72rem;
+}
+
+/* Linha clicável (abre o recibo). */
+.tabela tr.linha-clicavel {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tabela tbody tr.linha-clicavel:hover td {
+  background: var(--surface-2);
+}
+
+.historico-cliente {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.historico-cliente-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.historico-cliente-nome {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.historico-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+/* Selos da linha mais compactos, como metadados discretos. */
+.historico-chips .chip {
+  font-size: 0.74rem;
+  padding: 0.12rem 0.55rem;
+  font-weight: 600;
+}
+
+/* Forma de pagamento: só ícone + rótulo discreto, sem "pílula". */
+.chip.pgto {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.chip.pgto > span[aria-hidden] {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* Coluna Total/Lucro: o valor principal fica centralizado na linha e a
+   legenda (desc. / %) é posicionada logo abaixo, sem empurrar o valor para
+   cima. Assim o valor alinha exatamente com os ícones de ação à direita. */
+.historico-tabela td.num {
+  position: relative;
+}
+
+.historico-desc,
+.historico-margem {
+  position: absolute;
+  right: 0.75rem;
+  top: calc(50% + 0.6rem);
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.historico-lucro {
+  color: var(--verde);
+  font-weight: 600;
+}
+
+/* No modo cartão (telas estreitas) a legenda volta ao fluxo normal. */
+@media (max-width: 720px) {
+  .historico-tabela td.num {
+    position: static;
+  }
+
+  .historico-desc,
+  .historico-margem {
+    position: static;
+    top: auto;
+    right: auto;
+  }
+}
+
+/* Ações da linha: botões-ícone discretos (recibo, devolver). */
+/* Usa .tabela para vencer a especificidade de ".tabela .acoes". */
+.tabela .historico-acoes {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+
+.acao-icone {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--raio-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.acao-icone svg {
+  width: 17px;
+  height: 17px;
+}
+
+.acao-icone:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.acao-icone.perigo:hover {
+  background: var(--vermelho-suave);
+  border-color: transparent;
+  color: var(--vermelho);
+}
+
+.acao-icone:focus-visible {
+  outline: none;
+  border-color: var(--azul);
+  box-shadow: 0 0 0 3px var(--azul-suave);
+}
+
+/* Modo "cards": em telas estreitas a tabela vira cartões empilhados. */
+@media (max-width: 720px) {
+  .tabela-cards thead {
+    display: none;
+  }
+
+  .tabela-cards,
+  .tabela-cards tbody,
+  .tabela-cards tr,
+  .tabela-cards td {
+    display: block;
+    width: 100%;
+  }
+
+  .tabela-cards tr {
+    border: 1px solid var(--border);
+    border-radius: var(--raio-md);
+    padding: 0.75rem 0.9rem;
+    margin-bottom: 0.75rem;
+    background: var(--surface);
+  }
+
+  .tabela-cards td {
+    border: none !important;
+    padding: 0.3rem 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    text-align: right;
+  }
+
+  /* Rótulo da coluna (vem do atributo data-label). */
+  .tabela-cards td::before {
+    content: attr(data-label);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  /* Célula do cliente ocupa a linha inteira, sem rótulo. */
+  .tabela-cards td[data-label="Cliente"] {
+    justify-content: flex-start;
+    text-align: left;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  .tabela-cards td[data-label="Cliente"]::before {
+    display: none;
+  }
+
+  .historico-cliente {
+    width: 100%;
+  }
+
+  /* Ações viram uma barra no rodapé do card. */
+  .tabela-cards td.acoes {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    padding-top: 0.6rem;
+    margin-top: 0.4rem;
+    border-top: 1px solid var(--border) !important;
+  }
+
+  .tabela-cards td.acoes::before {
+    display: none;
+  }
+}
+
+/* Tela de delivery: célula do cliente na lista de pedidos. */
+.delivery-cliente {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.delivery-nome {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.delivery-endereco {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Itens do pedido dentro da célula da lista. */
+.delivery-itens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 15rem;
+}
+
+.delivery-itens li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+}
+
+.delivery-item-qtd {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.2rem;
+}
+
+.delivery-item-nome {
+  flex: 1;
+  color: var(--text);
+}
+
+.delivery-item-subtotal {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bloco de delivery na tela de venda. */
+.pdv-entrega {
+  margin-top: 0.9rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  background: var(--surface-2);
+}
+
+.pdv-entrega-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  cursor: pointer;
+}
+
+.pdv-entrega-toggle input {
+  margin-top: 0.2rem;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.pdv-entrega-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.9rem;
+}
+
+.pdv-entrega-texto .muted {
+  font-size: 0.78rem;
+}
+
+.pdv-entrega-aviso {
+  margin: 0.6rem 0 0;
+  font-size: 0.82rem;
+  color: var(--verde);
+  background: var(--verde-suave);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+
+.pdv-entrega-aviso.alerta {
+  color: var(--ambar);
+  background: var(--ambar-suave);
+}
+
+/* Botão de cobrança via WhatsApp. */
+.btn.whatsapp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #25d366;
+  border-color: #25d366;
+  color: #fff;
+}
+
+.btn.whatsapp:hover:not(:disabled) {
+  background: #1fb959;
+  border-color: #1fb959;
+}
+
+.btn.whatsapp:disabled {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* Filtro segmentado (Todos / Em atraso) na tela de contas a receber. */
+.cr-filtro {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.cr-filtro::-webkit-scrollbar {
+  display: none;
+}
+
+.cr-filtro-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.cr-filtro-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.8rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cr-filtro-btn:hover {
+  color: var(--text);
+}
+
+.cr-filtro-btn.ativo {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--sombra);
+}
+
+.cr-filtro-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--vermelho);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Aviso de parcela vencida na linha do cliente. */
+.chip.vencido {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--vermelho-suave);
+  color: var(--vermelho);
+  border: 1px solid transparent;
+  vertical-align: middle;
+}
+
+/* Linha de cliente com parcela em atraso. */
+.tabela tr.linha-vencida > td {
+  background: var(--vermelho-suave);
 }
 
 /* Chip de status "A prazo" / "Quitado" no histórico e na ficha. */
@@ -3678,4 +4543,114 @@ kbd {
 .config-cor svg {
   width: 20px;
   height: 20px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Detalhes da venda (modal do histórico)                              */
+/* ------------------------------------------------------------------ */
+.detalhes-lista {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Cada linha é um par rótulo/valor separado por um filete discreto. */
+.detalhes-linha {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.detalhes-linha:first-child {
+  border-top: 0;
+}
+
+.detalhes-linha dt {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.detalhes-linha dd {
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+/* Listas internas (parcelas, recebimentos, trocas). */
+.detalhes-itens {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.detalhes-itens li {
+  font-size: 0.88rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--border);
+}
+
+.detalhes-chip {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+/* Em telas estreitas o rótulo vai para cima do valor. */
+@media (max-width: 620px) {
+  .detalhes-linha {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Defeitos a acertar com o fornecedor                                 */
+/* ------------------------------------------------------------------ */
+
+/* Resumo "a cobrar por fornecedor": quem chamar e quantas peças. */
+.defeito-fornecedores {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.defeito-fornecedores li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--surface-2);
+  border-radius: var(--raio-sm);
+}
+
+.df-nome {
+  font-weight: 600;
+}
+
+.df-dados {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+/* Peças da troca dentro da célula da tabela. */
+.defeito-itens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.defeito-itens li {
+  font-size: 0.9rem;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { RelatorioGiro } from "../../types";
+import type { PeriodoRelatorio, RelatorioGiro } from "../../types";
 import { obterGiro } from "../../services/relatorios";
-import { extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
+import { extrairErro, PeriodoSeletor, RelatorioHeader } from "./lib";
 
 const icone = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -19,7 +19,7 @@ function classeCobertura(dias: number | null): string {
 }
 
 export default function GiroPage() {
-  const [dias, setDias] = useState(30);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 30 });
   const [dados, setDados] = useState<RelatorioGiro | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -28,14 +28,14 @@ export default function GiroPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterGiro(dias)
+    obterGiro(periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [dias]);
+  }, [periodo]);
 
   const linhas = dados?.linhas ?? [];
 
@@ -44,7 +44,7 @@ export default function GiroPage() {
       <RelatorioHeader
         titulo="Giro e cobertura"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

@@ -39,6 +39,10 @@ class Produto(Base):
     preco_custo = Column(Numeric(12, 2), nullable=False, default=0)
     preco_venda = Column(Numeric(12, 2), nullable=False, default=0)
 
+    # Preço praticado em venda a prazo (fiado), normalmente maior que o à vista.
+    # Opcional: quando nulo, a venda a prazo usa o próprio ``preco_venda``.
+    preco_venda_prazo = Column(Numeric(12, 2), nullable=True)
+
     # Estoque do produto simples (sem grade). Quando há variações, o estoque
     # relevante é o de cada variação.
     estoque = Column(Integer, nullable=False, default=0)

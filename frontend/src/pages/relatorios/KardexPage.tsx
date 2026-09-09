@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import type { Produto, RelatorioKardex } from "../../types";
+import type { PeriodoRelatorio, Produto, RelatorioKardex } from "../../types";
 import { obterKardex } from "../../services/relatorios";
 import { listarProdutos } from "../../services/produtos";
 import {
   brl,
   dataHoraBR,
   extrairErro,
-  PeriodoTabs,
+  PeriodoSeletor,
   RelatorioHeader,
 } from "./lib";
 import { LinhaSaldo } from "./Charts";
@@ -34,7 +34,7 @@ const rotuloTipo: Record<string, { texto: string; classe: string }> = {
 export default function KardexPage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtoId, setProdutoId] = useState<number | null>(null);
-  const [dias, setDias] = useState(90);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 90 });
   const [dados, setDados] = useState<RelatorioKardex | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -55,14 +55,14 @@ export default function KardexPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterKardex(produtoId, dias)
+    obterKardex(produtoId, periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [produtoId, dias]);
+  }, [produtoId, periodo]);
 
   const linhas = dados?.linhas ?? [];
 
@@ -71,7 +71,7 @@ export default function KardexPage() {
       <RelatorioHeader
         titulo="Kardex do produto"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

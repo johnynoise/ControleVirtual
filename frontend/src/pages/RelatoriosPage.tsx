@@ -67,9 +67,31 @@ const icones = {
       <path d="M17.5 13.5a6.5 6.5 0 0 1 4 6.5" />
     </svg>
   ),
+  fiscal: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2h9l4 4v16H6z" />
+      <path d="M14 2v5h5" />
+      <path d="M9 12h7" />
+      <path d="M9 16h7" />
+      <path d="M9 8h3" />
+    </svg>
+  ),
 };
 
 const GRUPOS: GrupoRelatorio[] = [
+  {
+    nome: "Contabilidade",
+    icone: icones.fiscal,
+    itens: [
+      {
+        to: "/relatorios/fiscal",
+        titulo: "Relatório fiscal",
+        descricao:
+          "Consolidado do ano para levar ao contador: receita, custo, despesas, estoque e contas a receber.",
+        disponivel: true,
+      },
+    ],
+  },
   {
     nome: "Vendas",
     icone: icones.vendas,

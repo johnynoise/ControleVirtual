@@ -19,7 +19,14 @@ import { useConfirm, useToast } from "../components/Feedback";
 const POR_PAGINA = 10;
 
 function formVazio(): ClienteCreate {
-  return { nome: "", telefone: "", email: "", ativo: true };
+  return {
+    nome: "",
+    telefone: "",
+    email: "",
+    data_nascimento: "",
+    endereco: "",
+    ativo: true,
+  };
 }
 
 type FiltroStatus = "todos" | "ativos" | "inativos";
@@ -115,6 +122,8 @@ export default function ClientesPage() {
       nome: c.nome,
       telefone: c.telefone ?? "",
       email: c.email ?? "",
+      data_nascimento: c.data_nascimento ?? "",
+      endereco: c.endereco ?? "",
       ativo: c.ativo,
     });
     setErro(null);
@@ -140,6 +149,8 @@ export default function ClientesPage() {
       nome: form.nome.trim(),
       telefone: form.telefone?.trim() || null,
       email: form.email?.trim() || null,
+      data_nascimento: form.data_nascimento?.trim() || null,
+      endereco: form.endereco?.trim() || null,
       ativo: form.ativo,
     };
 
@@ -383,7 +394,26 @@ export default function ClientesPage() {
               </label>
             </div>
 
-            <label className="check">
+            <div className="grid-2" style={{ marginTop: "1rem" }}>
+              <label>
+                Data de nascimento
+                <input
+                  type="date"
+                  value={form.data_nascimento ?? ""}
+                  onChange={(e) => setCampo("data_nascimento", e.target.value)}
+                />
+              </label>
+              <label>
+                Endereço
+                <input
+                  value={form.endereco ?? ""}
+                  onChange={(e) => setCampo("endereco", e.target.value)}
+                  placeholder="Rua, número, bairro (usado no delivery)"
+                />
+              </label>
+            </div>
+
+            <label className="check" style={{ marginTop: "1rem" }}>
               <input
                 type="checkbox"
                 checked={form.ativo}

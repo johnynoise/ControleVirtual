@@ -10,6 +10,8 @@ import { ConfiguracaoProvider } from "./components/ConfiguracaoContext";
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const VendasPage = lazy(() => import("./pages/VendasPage"));
 const HistoricoVendasPage = lazy(() => import("./pages/HistoricoVendasPage"));
+const DeliveryPage = lazy(() => import("./pages/DeliveryPage"));
+const DefeitosPage = lazy(() => import("./pages/DefeitosPage"));
 const ProdutosPage = lazy(() => import("./pages/ProdutosPage"));
 const MovimentacoesPage = lazy(() => import("./pages/MovimentacoesPage"));
 const FornecedoresPage = lazy(() => import("./pages/FornecedoresPage"));
@@ -17,6 +19,7 @@ const ClientesPage = lazy(() => import("./pages/ClientesPage"));
 const ClienteFichaPage = lazy(() => import("./pages/ClienteFichaPage"));
 const CategoriasPage = lazy(() => import("./pages/CategoriasPage"));
 const ContasReceberPage = lazy(() => import("./pages/ContasReceberPage"));
+const DespesasPage = lazy(() => import("./pages/DespesasPage"));
 const RelatoriosPage = lazy(() => import("./pages/RelatoriosPage"));
 const FormaPagamentoPage = lazy(() => import("./pages/relatorios/FormaPagamentoPage"));
 const CurvaAbcPage = lazy(() => import("./pages/relatorios/CurvaAbcPage"));
@@ -30,6 +33,7 @@ const VendasCategoriaPage = lazy(() => import("./pages/relatorios/VendasCategori
 const PerdasPage = lazy(() => import("./pages/relatorios/PerdasPage"));
 const GiroPage = lazy(() => import("./pages/relatorios/GiroPage"));
 const ClientesInativosPage = lazy(() => import("./pages/relatorios/ClientesInativosPage"));
+const RelatorioFiscalPage = lazy(() => import("./pages/relatorios/RelatorioFiscalPage"));
 const ConfiguracoesPage = lazy(() => import("./pages/ConfiguracoesPage"));
 
 function Carregando() {
@@ -65,6 +69,22 @@ function App() {
             element={
               <Suspense fallback={<Carregando />}>
                 <HistoricoVendasPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="delivery"
+            element={
+              <Suspense fallback={<Carregando />}>
+                <DeliveryPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="defeitos"
+            element={
+              <Suspense fallback={<Carregando />}>
+                <DefeitosPage />
               </Suspense>
             }
           />
@@ -121,6 +141,14 @@ function App() {
             element={
               <Suspense fallback={<Carregando />}>
                 <ContasReceberPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="despesas"
+            element={
+              <Suspense fallback={<Carregando />}>
+                <DespesasPage />
               </Suspense>
             }
           />
@@ -225,6 +253,14 @@ function App() {
             element={
               <Suspense fallback={<Carregando />}>
                 <ClientesInativosPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="relatorios/fiscal"
+            element={
+              <Suspense fallback={<Carregando />}>
+                <RelatorioFiscalPage />
               </Suspense>
             }
           />

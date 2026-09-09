@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import type { RelatorioFormaPagamento } from "../../types";
+import type { PeriodoRelatorio, RelatorioFormaPagamento } from "../../types";
 import { obterFormaPagamento } from "../../services/relatorios";
 import {
   brl,
   extrairErro,
-  PeriodoTabs,
+  PeriodoSeletor,
   pct,
   RelatorioHeader,
 } from "./lib";
@@ -18,7 +18,7 @@ const icone = (
 );
 
 export default function FormaPagamentoPage() {
-  const [dias, setDias] = useState(30);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 30 });
   const [dados, setDados] = useState<RelatorioFormaPagamento | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -27,14 +27,14 @@ export default function FormaPagamentoPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterFormaPagamento(dias)
+    obterFormaPagamento(periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [dias]);
+  }, [periodo]);
 
   const linhas = dados?.linhas ?? [];
 
@@ -43,7 +43,7 @@ export default function FormaPagamentoPage() {
       <RelatorioHeader
         titulo="Formas de pagamento"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

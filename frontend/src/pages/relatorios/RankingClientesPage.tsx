@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { RelatorioRankingClientes } from "../../types";
+import type { PeriodoRelatorio, RelatorioRankingClientes } from "../../types";
 import { obterRankingClientes } from "../../services/relatorios";
-import { brl, dataBR, extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
+import { brl, dataBR, extrairErro, PeriodoSeletor, RelatorioHeader } from "./lib";
 import { BarrasHorizontais } from "./Charts";
 
 const icone = (
@@ -14,7 +14,7 @@ const icone = (
 );
 
 export default function RankingClientesPage() {
-  const [dias, setDias] = useState(30);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 30 });
   const [dados, setDados] = useState<RelatorioRankingClientes | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -23,14 +23,14 @@ export default function RankingClientesPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterRankingClientes(dias)
+    obterRankingClientes(periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [dias]);
+  }, [periodo]);
 
   const linhas = dados?.linhas ?? [];
   const maxFat = Math.max(1, ...linhas.map((l) => parseFloat(l.faturamento) || 0));
@@ -40,7 +40,7 @@ export default function RankingClientesPage() {
       <RelatorioHeader
         titulo="Ranking de clientes"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

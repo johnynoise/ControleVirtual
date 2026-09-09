@@ -88,10 +88,10 @@ export default function DashboardPage() {
       // Núcleo do painel. resumoDobro cobre o dobro do período: subtraindo o
       // período atual, sobram exatamente os N dias anteriores (para o delta).
       const [r, rDobro, d, mv, est] = await Promise.all([
-        obterResumo(periodo),
-        obterResumo(periodo * 2),
-        obterVendasPorDia(periodo),
-        obterMaisVendidos(periodo, 5),
+        obterResumo({ dias: periodo }),
+        obterResumo({ dias: periodo * 2 }),
+        obterVendasPorDia({ dias: periodo }),
+        obterMaisVendidos({ dias: periodo }, 5),
         obterResumoEstoque(),
       ]);
       setResumo(r);

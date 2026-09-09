@@ -40,6 +40,11 @@ class ProdutoBase(BaseModel):
     categoria_id: int
     preco_custo: Decimal = Field(default=Decimal("0"), ge=0)
     preco_venda: Decimal = Field(default=Decimal("0"), ge=0)
+    preco_venda_prazo: Decimal | None = Field(
+        default=None,
+        ge=0,
+        description="Preço para venda a prazo (fiado). Se nulo, usa o preço de venda à vista.",
+    )
     estoque: int = Field(default=0, ge=0)
     estoque_minimo: int = Field(default=0, ge=0)
     atributos: dict[str, Any] = Field(default_factory=dict)
@@ -58,6 +63,7 @@ class ProdutoUpdate(BaseModel):
     categoria_id: int | None = None
     preco_custo: Decimal | None = Field(default=None, ge=0)
     preco_venda: Decimal | None = Field(default=None, ge=0)
+    preco_venda_prazo: Decimal | None = Field(default=None, ge=0)
     estoque: int | None = Field(default=None, ge=0)
     estoque_minimo: int | None = Field(default=None, ge=0)
     atributos: dict[str, Any] | None = None
@@ -71,6 +77,19 @@ class ProdutoOut(ProdutoBase):
     criado_em: datetime
     atualizado_em: datetime
     variacoes: list[VariacaoOut] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def preco_venda_prazo_efetivo(self) -> Decimal:
+        """Preço realmente cobrado numa venda a prazo.
+
+        Usa o preço a prazo quando o produto tem um; senão, cai no preço à
+        vista. Concentra a regra do fallback aqui para que o PDV não precise
+        repeti-la.
+        """
+        if self.preco_venda_prazo is None:
+            return self.preco_venda
+        return self.preco_venda_prazo
 
     @computed_field
     @property

@@ -41,6 +41,31 @@ export function formatarTelefone(valor: string): string {
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
 
+/**
+ * Aplica máscara de CPF ou CNPJ conforme a quantidade de dígitos digitada.
+ * Ex.: "12345678900" → "123.456.789-00" · "12345678000190" → "12.345.678/0001-90".
+ * Até 11 dígitos formata como CPF; acima disso, como CNPJ.
+ */
+export function formatarDocumento(valor: string): string {
+  const d = valor.replace(/\D/g, "").slice(0, 14);
+  if (d.length <= 11) {
+    if (d.length <= 3) return d;
+    if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+    if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  }
+  const base = `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}`;
+  // Sem os dígitos finais ainda, não adianta mostrar o hífen.
+  return d.length <= 12 ? base : `${base}-${d.slice(12)}`;
+}
+
+/** Aplica máscara de CEP. Ex.: "01310100" → "01310-100". */
+export function formatarCep(valor: string): string {
+  const d = valor.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
 /** Monta um link de WhatsApp a partir do telefone (formato brasileiro). */
 export function linkWhatsapp(telefone: string | null | undefined): string | null {
   if (!telefone) return null;
@@ -79,6 +104,13 @@ export function brl(valor: number | string | null | undefined): string {
 /** Data curta (dd/mm/aaaa). Retorna "—" quando ausente/inválida. */
 export function dataBR(iso: string | null | undefined): string {
   if (!iso) return "—";
+  // Datas "YYYY-MM-DD" (sem hora) são tratadas como data local pura, para não
+  // "voltar um dia" em fusos negativos (ex.: vencimento, nascimento).
+  const soData = /^\d{4}-\d{2}-\d{2}$/.exec(iso);
+  if (soData) {
+    const [ano, mes, dia] = iso.split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR");

@@ -12,6 +12,9 @@ from app.routers import (
     categorias,
     clientes,
     configuracao,
+    defeitos,
+    despesas,
+    fiscal,
     fornecedores,
     movimentacoes,
     produtos,
@@ -36,6 +39,38 @@ def _migrar_colunas() -> None:
         "vendas": {
             "cancelada_em": "TIMESTAMP",
             "motivo_cancelamento": "VARCHAR(200)",
+            "entrega_status": "VARCHAR(20)",
+            "entregue_em": "TIMESTAMP",
+            "endereco_entrega": "VARCHAR(300)",
+        },
+        "clientes": {
+            "data_nascimento": "DATE",
+            "endereco": "VARCHAR(300)",
+        },
+        "produtos": {
+            "preco_venda_prazo": "NUMERIC(12, 2)",
+        },
+        "devolucoes": {
+            "defeito": "BOOLEAN NOT NULL DEFAULT '0'",
+            "status_fornecedor": "VARCHAR(20)",
+            "resolvido_em": "TIMESTAMP",
+            "resolucao_observacao": "TEXT",
+        },
+        # Cadastro fiscal da loja. Tudo nulo por padrão: quem vende como pessoa
+        # física não tem razão social, inscrição estadual nem CNPJ.
+        "configuracao": {
+            "tipo_pessoa": "VARCHAR(20)",
+            "razao_social": "VARCHAR(200)",
+            "inscricao_estadual": "VARCHAR(30)",
+            "inscricao_municipal": "VARCHAR(30)",
+            "cnae": "VARCHAR(20)",
+            "data_abertura": "DATE",
+            "regime_tributario": "VARCHAR(30)",
+            "cep": "VARCHAR(12)",
+            "cidade": "VARCHAR(120)",
+            "estado": "VARCHAR(2)",
+            "contador_nome": "VARCHAR(200)",
+            "contador_contato": "VARCHAR(200)",
         },
     }
     try:
@@ -94,7 +129,10 @@ app.include_router(movimentacoes.router)
 app.include_router(fornecedores.router)
 app.include_router(clientes.router)
 app.include_router(vendas.router)
+app.include_router(defeitos.router)
+app.include_router(despesas.router)
 app.include_router(relatorios.router)
+app.include_router(fiscal.router)
 app.include_router(configuracao.router)
 
 

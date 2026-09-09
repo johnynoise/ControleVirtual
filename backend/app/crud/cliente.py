@@ -65,6 +65,9 @@ def ficha(db: Session, cliente_id: int) -> dict | None:
         .order_by(Venda.criado_em.desc(), Venda.id.desc())
         .all()
     )
+    # Pedidos de delivery ainda pendentes não são vendas realizadas: ficam de
+    # fora das métricas e do histórico de compras da ficha.
+    vendas = [v for v in vendas if v.entrega_status != "pendente"]
     validas = [v for v in vendas if v.cancelada_em is None]
 
     total_gasto = sum((v.total_liquido or 0) for v in validas)
@@ -89,6 +92,7 @@ def ficha(db: Session, cliente_id: int) -> dict | None:
         .filter(
             Venda.cliente_id == cliente_id,
             Venda.cancelada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
             ItemVenda.quantidade > 0,
         )
         .group_by(ItemVenda.produto_id, ItemVenda.produto_nome)

@@ -1,5 +1,5 @@
 """Schemas Pydantic de Venda e Item de Venda."""
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 
@@ -56,6 +56,14 @@ class ItemVendaOut(BaseModel):
 # --------------------------------------------------------------------------- #
 # Venda
 # --------------------------------------------------------------------------- #
+class ParcelaCreate(BaseModel):
+    """Uma parcela do plano de parcelamento de uma venda a prazo (fiado)."""
+
+    numero: int = Field(..., ge=1, le=3)
+    valor: Decimal = Field(..., gt=0)
+    vencimento: date
+
+
 class VendaCreate(BaseModel):
     cliente_id: int | None = None
     cliente_nome: str | None = Field(default=None, max_length=200)
@@ -63,6 +71,13 @@ class VendaCreate(BaseModel):
     desconto: Decimal = Field(default=Decimal("0"), ge=0)
     observacao: str | None = None
     itens: list[ItemVendaCreate] = Field(..., min_length=1)
+    # Plano de parcelamento (apenas para vendas a prazo/fiado). Máximo de 3
+    # parcelas. Se omitido em uma venda fiada, assume pagamento em parcela única.
+    parcelas: list[ParcelaCreate] = Field(default_factory=list, max_length=3)
+    # Delivery: quando True, a venda entra como pedido pendente de entrega (não
+    # baixa estoque nem conta em relatórios até a entrega ser confirmada).
+    entrega: bool = False
+    endereco_entrega: str | None = Field(default=None, max_length=300)
 
 
 class EstornoRequest(BaseModel):
@@ -80,6 +95,13 @@ class MotivoDevolucao(str, Enum):
     outro = "outro"
 
 
+class StatusFornecedor(str, Enum):
+    """Situação da peça com defeito no acerto com o fornecedor."""
+
+    pendente = "pendente"
+    resolvido = "resolvido"
+
+
 class ItemDevolucaoRequest(BaseModel):
     item_venda_id: int
     quantidade: int = Field(..., gt=0)
@@ -88,6 +110,9 @@ class ItemDevolucaoRequest(BaseModel):
 class DevolucaoRequest(BaseModel):
     motivo: MotivoDevolucao
     observacao: str | None = Field(default=None, max_length=300)
+    # Peça com defeito: a troca fica registrada como pendente de acerto com o
+    # fornecedor (ver ``StatusFornecedor``).
+    defeito: bool = False
     itens: list[ItemDevolucaoRequest] = Field(..., min_length=1)
 
 
@@ -110,6 +135,8 @@ class DevolucaoOut(BaseModel):
     venda_id: int
     motivo: str
     observacao: str | None
+    defeito: bool = False
+    status_fornecedor: str | None = None
     valor_devolvido: Decimal
     criado_em: datetime
     itens: list[ItemDevolucaoOut] = Field(default_factory=list)
@@ -135,6 +162,16 @@ class PagamentoOut(BaseModel):
     criado_em: datetime
 
 
+class ParcelaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    venda_id: int
+    numero: int
+    valor: Decimal
+    vencimento: date
+
+
 class EnviarReciboRequest(BaseModel):
     """Pedido para enviar o recibo da venda por email.
 
@@ -154,9 +191,13 @@ class ContaReceberLinha(BaseModel):
 
     cliente_id: int | None
     cliente_nome: str
+    cliente_telefone: str | None = None
     num_vendas: int
     total_devido: Decimal
     venda_mais_antiga: datetime
+    # Parcelas em atraso (vencimento já passou e ainda em aberto).
+    parcelas_vencidas: int = 0
+    valor_vencido: Decimal = Decimal("0.00")
 
 
 class VendaOut(BaseModel):
@@ -175,9 +216,13 @@ class VendaOut(BaseModel):
     criado_em: datetime
     cancelada_em: datetime | None = None
     motivo_cancelamento: str | None = None
+    entrega_status: str | None = None
+    entregue_em: datetime | None = None
+    endereco_entrega: str | None = None
     itens: list[ItemVendaOut] = Field(default_factory=list)
     devolucoes: list["DevolucaoOut"] = Field(default_factory=list)
     pagamentos: list["PagamentoOut"] = Field(default_factory=list)
+    parcelas: list["ParcelaOut"] = Field(default_factory=list)
 
     @computed_field
     @property
@@ -192,6 +237,18 @@ class VendaOut(BaseModel):
     def a_prazo(self) -> bool:
         """Indica se a venda foi feita no fiado (a prazo)."""
         return self.forma_pagamento == FormaPagamento.fiado.value
+
+    @computed_field
+    @property
+    def is_delivery(self) -> bool:
+        """Verdadeiro para vendas de delivery (com fluxo de entrega)."""
+        return self.entrega_status is not None
+
+    @computed_field
+    @property
+    def entrega_pendente(self) -> bool:
+        """Pedido de delivery ainda não entregue (não realizado)."""
+        return self.entrega_status == "pendente" and self.cancelada_em is None
 
     @computed_field
     @property

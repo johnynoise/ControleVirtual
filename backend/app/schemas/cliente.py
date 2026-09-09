@@ -1,5 +1,5 @@
 """Schemas Pydantic de Cliente."""
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,6 +9,8 @@ class ClienteBase(BaseModel):
     nome: str = Field(..., min_length=1, max_length=200)
     telefone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=120)
+    data_nascimento: date | None = None
+    endereco: str | None = Field(default=None, max_length=300)
     ativo: bool = True
 
 
@@ -20,6 +22,8 @@ class ClienteUpdate(BaseModel):
     nome: str | None = Field(default=None, min_length=1, max_length=200)
     telefone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=120)
+    data_nascimento: date | None = None
+    endereco: str | None = Field(default=None, max_length=300)
     ativo: bool | None = None
 
 

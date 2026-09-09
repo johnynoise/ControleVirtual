@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import type { RelatorioPerdas } from "../../types";
+import type { PeriodoRelatorio, RelatorioPerdas } from "../../types";
 import { obterPerdas } from "../../services/relatorios";
 import {
   brl,
   dataHoraBR,
   extrairErro,
-  PeriodoTabs,
+  PeriodoSeletor,
   RelatorioHeader,
 } from "./lib";
 
@@ -24,7 +24,7 @@ const rotuloTipo: Record<string, { texto: string; classe: string }> = {
 };
 
 export default function PerdasPage() {
-  const [dias, setDias] = useState(30);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 30 });
   const [dados, setDados] = useState<RelatorioPerdas | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -33,14 +33,14 @@ export default function PerdasPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterPerdas(dias)
+    obterPerdas(periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [dias]);
+  }, [periodo]);
 
   const linhas = dados?.linhas ?? [];
 
@@ -49,7 +49,7 @@ export default function PerdasPage() {
       <RelatorioHeader
         titulo="Perdas e ajustes"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

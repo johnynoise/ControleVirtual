@@ -2,6 +2,9 @@
 from app.routers import (
     categorias,
     clientes,
+    defeitos,
+    despesas,
+    fiscal,
     fornecedores,
     movimentacoes,
     produtos,
@@ -16,5 +19,8 @@ __all__ = [
     "fornecedores",
     "clientes",
     "vendas",
+    "defeitos",
+    "despesas",
     "relatorios",
+    "fiscal",
 ]

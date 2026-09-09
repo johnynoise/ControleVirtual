@@ -5,6 +5,7 @@ import type {
   Cliente,
   FormaPagamento,
   ItemVendaCreate,
+  ParcelaCreate,
   Produto,
   Venda,
   VendaCreate,
@@ -33,6 +34,27 @@ interface ItemCarrinho {
   quantidade: number;
   preco_unitario: number;
   estoque: number;
+  // Marca itens cujo preço o operador digitou à mão. Esses não são
+  // re-precificados quando a forma de pagamento muda.
+  preco_editado: boolean;
+}
+
+// Preço de tabela do produto conforme a forma de pagamento: no fiado vale o
+// preço a prazo do cadastro (o backend já resolve o fallback para o à vista
+// quando o produto não tem um preço a prazo próprio).
+function precoTabela(p: Produto, forma: FormaPagamento): number {
+  const bruto =
+    forma === "fiado" ? p.preco_venda_prazo_efetivo : p.preco_venda;
+  return parseFloat(bruto) || 0;
+}
+
+// Data (YYYY-MM-DD, fuso local) daqui a `offsetDias` dias — usada como
+// vencimento padrão sugerido para cada parcela.
+function dataISO(offsetDias: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDias);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
 }
 
 export default function VendasPage() {
@@ -58,6 +80,14 @@ export default function VendasPage() {
   const [desconto, setDesconto] = useState("0");
   const [descontoTipo, setDescontoTipo] = useState<"reais" | "percent">("reais");
 
+  // Parcelamento (apenas fiado): quantidade de parcelas (1 a 3) e a data de
+  // vencimento combinada para cada uma.
+  const [numParcelas, setNumParcelas] = useState<1 | 2 | 3>(1);
+  const [vencimentos, setVencimentos] = useState<string[]>([]);
+
+  // Delivery: quando ligado, a venda entra como pedido pendente de entrega.
+  const [entrega, setEntrega] = useState(false);
+
   // Valor recebido em dinheiro (para cálculo de troco). Não vai ao backend.
   const [recebido, setRecebido] = useState("");
 
@@ -73,11 +103,26 @@ export default function VendasPage() {
     );
   }
 
+  // Trocar a forma de pagamento re-precifica o carrinho: o fiado usa o preço a
+  // prazo do produto. Itens com preço digitado à mão ficam como estão.
+  useEffect(() => {
+    setCarrinho((atual) =>
+      atual.map((i) => {
+        if (i.preco_editado) return i;
+        const p = produtos.find((prod) => prod.id === i.produto_id);
+        if (!p) return i;
+        const novo = precoTabela(p, formaPagamento);
+        return novo === i.preco_unitario ? i : { ...i, preco_unitario: novo };
+      })
+    );
+  }, [formaPagamento, produtos]);
+
   // Cadastro rápido de cliente direto na tela de venda.
   const [novoCliente, setNovoCliente] = useState(false);
   const [ncNome, setNcNome] = useState("");
   const [ncTelefone, setNcTelefone] = useState("");
   const [ncEmail, setNcEmail] = useState("");
+  const [ncEndereco, setNcEndereco] = useState("");
   const [salvandoCliente, setSalvandoCliente] = useState(false);
 
   // Venda exibida no recibo após finalizar.
@@ -184,10 +229,41 @@ export default function VendasPage() {
       : Math.max(0, descontoDigitado);
   const totalLiquido = Math.max(0, totalBruto - descontoValor);
 
+  // Valores de cada parcela: divide o total igualmente em centavos e joga a
+  // sobra do arredondamento na última parcela (ex.: 100/3 → 33,33 · 33,33 · 33,34).
+  const valoresParcelas = useMemo(() => {
+    const n = numParcelas;
+    if (n <= 0 || totalLiquido <= 0) return [];
+    const centavos = Math.round(totalLiquido * 100);
+    const base = Math.floor(centavos / n);
+    const valores: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const c = k === n - 1 ? centavos - base * (n - 1) : base;
+      valores.push(c / 100);
+    }
+    return valores;
+  }, [numParcelas, totalLiquido]);
+
+  // Mantém a lista de vencimentos com uma entrada por parcela, preenchendo com
+  // um padrão (30, 60, 90 dias) as datas ainda não informadas.
+  useEffect(() => {
+    setVencimentos((atual) => {
+      const novo = atual.slice(0, numParcelas);
+      for (let k = 0; k < numParcelas; k++) {
+        if (!novo[k]) novo[k] = dataISO(30 * (k + 1));
+      }
+      return novo;
+    });
+  }, [numParcelas]);
+
   // Troco: só faz sentido no dinheiro. O valor recebido não é enviado ao
   // backend — serve para o operador conferir o troco no balcão.
   const recebidoNum = parseNumero(recebido);
   const troco = recebidoNum - totalLiquido;
+
+  // Cliente selecionado (para o delivery usar o endereço cadastrado dele).
+  const clienteSelecionado =
+    clienteId === "" ? null : clientes.find((c) => c.id === clienteId) ?? null;
 
   // Sugestões de cédulas: valor exato + próximos múltiplos redondos acima do
   // total (ex.: total R$ 37 → 40, 50, 100).
@@ -229,8 +305,9 @@ export default function VendasPage() {
           produto_id: p.id,
           produto_nome: p.nome,
           quantidade: 1,
-          preco_unitario: parseFloat(p.preco_venda) || 0,
+          preco_unitario: precoTabela(p, formaPagamento),
           estoque: p.estoque,
+          preco_editado: false,
         },
       ];
     });
@@ -271,7 +348,9 @@ export default function VendasPage() {
     const preco = Math.max(0, parseNumero(valor));
     setCarrinho((atual) =>
       atual.map((i) =>
-        i.produto_id === produto_id ? { ...i, preco_unitario: preco } : i
+        i.produto_id === produto_id
+          ? { ...i, preco_unitario: preco, preco_editado: true }
+          : i
       )
     );
   }
@@ -279,6 +358,14 @@ export default function VendasPage() {
   function removerDoCarrinho(produto_id: number) {
     setCarrinho((atual) => atual.filter((i) => i.produto_id !== produto_id));
     setPrecosAbertos((atual) => atual.filter((id) => id !== produto_id));
+  }
+
+  function definirVencimento(indice: number, valor: string) {
+    setVencimentos((atual) => {
+      const novo = [...atual];
+      novo[indice] = valor;
+      return novo;
+    });
   }
 
   // Enter na busca adiciona um produto (leitor de código de barras ou
@@ -308,6 +395,7 @@ export default function VendasPage() {
     setNcNome("");
     setNcTelefone("");
     setNcEmail("");
+    setNcEndereco("");
   }
 
   async function salvarNovoCliente() {
@@ -322,6 +410,7 @@ export default function VendasPage() {
         nome: ncNome.trim(),
         telefone: ncTelefone.trim() || null,
         email: ncEmail.trim() || null,
+        endereco: ncEndereco.trim() || null,
         ativo: true,
       });
       setClientes(await listarClientes({ apenas_ativos: true }));
@@ -345,6 +434,9 @@ export default function VendasPage() {
     setRecebido("");
     setPrecosAbertos([]);
     setBusca("");
+    setNumParcelas(1);
+    setVencimentos([]);
+    setEntrega(false);
   }
 
   async function finalizar() {
@@ -357,6 +449,41 @@ export default function VendasPage() {
       toast.erro("Selecione um cliente para vender no fiado.");
       return;
     }
+    // Delivery: a entrega vai para o endereço cadastrado do cliente.
+    let enderecoDelivery: string | undefined;
+    if (entrega) {
+      if (clienteId === "") {
+        setErro("Delivery exige um cliente selecionado (com endereço).");
+        toast.erro("Selecione um cliente para a entrega.");
+        return;
+      }
+      const cli = clientes.find((c) => c.id === clienteId);
+      const end = (cli?.endereco ?? "").trim();
+      if (!end) {
+        setErro(
+          "O cliente selecionado não tem endereço cadastrado. Edite o cliente para adicionar."
+        );
+        toast.erro("Cliente sem endereço cadastrado.");
+        return;
+      }
+      enderecoDelivery = end;
+    }
+
+    // Monta o plano de parcelas quando a venda é a prazo (fiado).
+    let parcelas: ParcelaCreate[] | undefined;
+    if (formaPagamento === "fiado") {
+      if (vencimentos.slice(0, numParcelas).some((d) => !d)) {
+        setErro("Informe a data de vencimento de cada parcela.");
+        toast.erro("Informe a data de vencimento de cada parcela.");
+        return;
+      }
+      parcelas = valoresParcelas.map((valor, k) => ({
+        numero: k + 1,
+        valor: Number(valor.toFixed(2)),
+        vencimento: vencimentos[k],
+      }));
+    }
+
     setSalvando(true);
     setErro(null);
 
@@ -371,6 +498,10 @@ export default function VendasPage() {
       forma_pagamento: formaPagamento,
       desconto: Number(descontoValor.toFixed(2)),
       itens,
+      ...(parcelas ? { parcelas } : {}),
+      ...(entrega
+        ? { entrega: true, endereco_entrega: enderecoDelivery }
+        : {}),
     };
 
     // Captura o troco antes de limpar a venda (limparVenda zera o recebido).
@@ -379,13 +510,23 @@ export default function VendasPage() {
         ? { recebido: recebidoNum, troco }
         : null;
 
+    const eraEntrega = entrega;
+
     try {
       const venda = await criarVenda(payload);
       limparVenda();
       await carregar();
-      setReciboDinheiro(dinheiro);
-      setVendaRecibo(venda);
-      toast.sucesso(`Venda #${venda.id} finalizada · ${brl(venda.total_liquido)}`);
+      if (eraEntrega) {
+        // Pedido de delivery: ainda não é uma venda realizada, então não abre
+        // recibo. Fica pendente na tela de Delivery até a entrega ser confirmada.
+        toast.sucesso(
+          `Pedido de entrega #${venda.id} registrado · ${brl(venda.total_liquido)}`
+        );
+      } else {
+        setReciboDinheiro(dinheiro);
+        setVendaRecibo(venda);
+        toast.sucesso(`Venda #${venda.id} finalizada · ${brl(venda.total_liquido)}`);
+      }
       buscaRef.current?.focus();
     } catch (err) {
       setErro(extrairErro(err));
@@ -503,7 +644,7 @@ export default function VendasPage() {
                     </span>
                     <span className="pdv-produto-nome">{p.nome}</span>
                     <span className="pdv-produto-rodape">
-                      <strong>{brl(p.preco_venda)}</strong>
+                      <strong>{brl(precoTabela(p, formaPagamento))}</strong>
                       <span
                         className={`pdv-estoque${semEstoque ? " zero" : p.estoque <= p.estoque_minimo ? " baixo" : ""}`}
                       >
@@ -547,6 +688,7 @@ export default function VendasPage() {
             </div>
           ) : (
             <>
+              <div className="pdv-carrinho-corpo">
               <ul className="pdv-itens">
                 {carrinho.map((i) => (
                   <li key={i.produto_id} className="pdv-item">
@@ -694,6 +836,11 @@ export default function VendasPage() {
                       onChange={(e) => setNcEmail(e.target.value)}
                       placeholder="E-mail (opcional)"
                     />
+                    <input
+                      value={ncEndereco}
+                      onChange={(e) => setNcEndereco(e.target.value)}
+                      placeholder="Endereço (para delivery)"
+                    />
                     <div className="form-acoes" style={{ marginTop: 0 }}>
                       <button
                         type="button"
@@ -713,6 +860,39 @@ export default function VendasPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              <div className="pdv-entrega">
+                <label className="pdv-entrega-toggle">
+                  <input
+                    type="checkbox"
+                    checked={entrega}
+                    onChange={(e) => setEntrega(e.target.checked)}
+                  />
+                  <span className="pdv-entrega-texto">
+                    <strong>🛵 Delivery (entrega)</strong>
+                    <span className="muted">
+                      Entra como pedido pendente. A venda só é concluída ao
+                      confirmar a entrega.
+                    </span>
+                  </span>
+                </label>
+                {entrega &&
+                  (clienteSelecionado == null ? (
+                    <p className="pdv-entrega-aviso alerta">
+                      ⚠ Selecione um cliente acima: a entrega vai para o endereço
+                      cadastrado dele.
+                    </p>
+                  ) : (clienteSelecionado.endereco ?? "").trim() === "" ? (
+                    <p className="pdv-entrega-aviso alerta">
+                      ⚠ {clienteSelecionado.nome} não tem endereço cadastrado.
+                      Edite o cliente para adicionar.
+                    </p>
+                  ) : (
+                    <p className="pdv-entrega-aviso">
+                      📍 Entregar em: {clienteSelecionado.endereco}
+                    </p>
+                  ))}
               </div>
 
               <div className="pdv-pagamento">
@@ -738,6 +918,50 @@ export default function VendasPage() {
                       ? "⚠ Selecione um cliente acima: o fiado fica no nome dele."
                       : "📓 Esta venda entra como saldo devedor do cliente."}
                   </p>
+                )}
+
+                {formaPagamento === "fiado" && totalLiquido > 0 && (
+                  <div className="pdv-parcelamento">
+                    <span className="pdv-label">Parcelar em</span>
+                    <div
+                      className="pdv-parcelas-opcoes"
+                      role="group"
+                      aria-label="Número de parcelas"
+                    >
+                      {[1, 2, 3].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className={`pdv-parcela-opcao${numParcelas === n ? " ativo" : ""}`}
+                          onClick={() => setNumParcelas(n as 1 | 2 | 3)}
+                          aria-pressed={numParcelas === n}
+                        >
+                          {n}x
+                        </button>
+                      ))}
+                    </div>
+
+                    <ul className="pdv-parcelas-lista">
+                      {valoresParcelas.map((valor, k) => (
+                        <li key={k} className="pdv-parcela-linha">
+                          <span className="pdv-parcela-rotulo">
+                            {k + 1}ª parcela
+                            <strong>{brl(valor)}</strong>
+                          </span>
+                          <label className="pdv-parcela-data">
+                            <span>Vence em</span>
+                            <input
+                              type="date"
+                              value={vencimentos[k] ?? ""}
+                              onChange={(e) =>
+                                definirVencimento(k, e.target.value)
+                              }
+                            />
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
 
@@ -787,7 +1011,7 @@ export default function VendasPage() {
                   <strong>{brl(totalLiquido)}</strong>
                 </div>
 
-                {formaPagamento === "dinheiro" && totalLiquido > 0 && (
+                {formaPagamento === "dinheiro" && totalLiquido > 0 && !entrega && (
                   <div className="pdv-troco">
                     <label htmlFor="pdv-recebido" className="pdv-label">
                       Dinheiro recebido
@@ -826,6 +1050,7 @@ export default function VendasPage() {
                   </div>
                 )}
               </div>
+              </div>
 
               <button
                 className="btn primario pdv-finalizar"
@@ -833,8 +1058,10 @@ export default function VendasPage() {
                 disabled={salvando || carrinho.length === 0}
               >
                 {salvando
-                  ? "Finalizando..."
-                  : `${formaPagamento === "fiado" ? "Fiar" : "Finalizar"} · ${brl(totalLiquido)}`}
+                  ? entrega
+                    ? "Registrando..."
+                    : "Finalizando..."
+                  : `${entrega ? "Registrar entrega" : formaPagamento === "fiado" ? "Fiar" : "Finalizar"} · ${brl(totalLiquido)}`}
                 {!salvando && <kbd className="pdv-kbd-btn">F2</kbd>}
               </button>
             </>

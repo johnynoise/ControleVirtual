@@ -39,6 +39,40 @@ def listar_contas_a_receber(db: Session = Depends(get_db)):
     return crud_venda.contas_a_receber(db)
 
 
+@router.get("/contas-a-receber/{cliente_id}", response_model=list[VendaOut])
+def listar_fiado_cliente(
+    cliente_id: int,
+    apenas_abertas: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Histórico de vendas a prazo de um cliente, com os itens de cada compra.
+
+    Por padrão inclui as compras fiado já quitadas (para avaliar o histórico de
+    pagamento). Use ``apenas_abertas=true`` para trazer só as com saldo devedor.
+    """
+    return crud_venda.fiado_por_cliente(db, cliente_id, apenas_abertas=apenas_abertas)
+
+
+@router.get("/entregas", response_model=list[VendaOut])
+def listar_entregas(
+    incluir_entregues: bool = False, db: Session = Depends(get_db)
+):
+    """Pedidos de delivery. Por padrão só os pendentes (fila de entrega)."""
+    return crud_venda.listar_entregas(db, incluir_entregues=incluir_entregues)
+
+
+@router.post("/{venda_id}/confirmar-entrega", response_model=VendaOut)
+def confirmar_entrega(venda_id: int, db: Session = Depends(get_db)):
+    """Confirma a entrega de um pedido de delivery, realizando a venda."""
+    try:
+        venda = crud_venda.confirmar_entrega(db, venda_id)
+    except ErroVenda as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if venda is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado.")
+    return venda
+
+
 @router.get("/{venda_id}", response_model=VendaOut)
 def obter_venda(venda_id: int, db: Session = Depends(get_db)):
     venda = crud_venda.obter(db, venda_id)

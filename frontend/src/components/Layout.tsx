@@ -80,6 +80,29 @@ const icones: Record<string, ReactNode> = {
       <path d="M6 15h4" />
     </svg>
   ),
+  delivery: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 13h11V6H3z" />
+      <path d="M14 9h4l3 3v4h-7z" />
+      <circle cx="7" cy="18" r="1.6" />
+      <circle cx="17" cy="18" r="1.6" />
+    </svg>
+  ),
+  defeitos: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.3 3.6 1.8 18a1.8 1.8 0 0 0 1.6 2.7h17.2a1.8 1.8 0 0 0 1.6-2.7L13.7 3.6a1.8 1.8 0 0 0-3.4 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  ),
+  despesas: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 3h11l3 3v15l-2.5-1.5L14 21l-2.5-1.5L9 21l-2.5-1.5L4 21V3z" />
+      <path d="M8 8h7" />
+      <path d="M8 12h7" />
+      <path d="M8 16h4" />
+    </svg>
+  ),
 };
 
 interface Link {
@@ -96,7 +119,9 @@ const GRUPOS: { titulo: string; itens: Link[] }[] = [
     titulo: "Vendas",
     itens: [
       { to: "/vendas/historico", rotulo: "Histórico", icone: "historico" },
+      { to: "/delivery", rotulo: "Delivery", icone: "delivery" },
       { to: "/contas-a-receber", rotulo: "Fiado", icone: "fiado" },
+      { to: "/defeitos", rotulo: "Defeitos", icone: "defeitos" },
     ],
   },
   {
@@ -113,6 +138,10 @@ const GRUPOS: { titulo: string; itens: Link[] }[] = [
       { to: "/clientes", rotulo: "Clientes", icone: "clientes" },
       { to: "/fornecedores", rotulo: "Fornecedores", icone: "fornecedores" },
     ],
+  },
+  {
+    titulo: "Financeiro",
+    itens: [{ to: "/despesas", rotulo: "Despesas", icone: "despesas" }],
   },
   {
     titulo: "Análise",

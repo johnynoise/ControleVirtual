@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { RelatorioSemGiro } from "../../types";
+import type { PeriodoRelatorio, RelatorioSemGiro } from "../../types";
 import { obterSemGiro } from "../../services/relatorios";
-import { brl, dataBR, extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
+import { brl, dataBR, extrairErro, PeriodoSeletor, RelatorioHeader } from "./lib";
 
 const icone = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -11,7 +11,7 @@ const icone = (
 );
 
 export default function SemGiroPage() {
-  const [dias, setDias] = useState(30);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 30 });
   const [dados, setDados] = useState<RelatorioSemGiro | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -20,14 +20,14 @@ export default function SemGiroPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterSemGiro(dias)
+    obterSemGiro(periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [dias]);
+  }, [periodo]);
 
   const linhas = dados?.linhas ?? [];
 
@@ -36,7 +36,7 @@ export default function SemGiroPage() {
       <RelatorioHeader
         titulo="Produtos sem giro"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

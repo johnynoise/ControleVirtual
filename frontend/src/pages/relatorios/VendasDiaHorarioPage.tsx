@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { RelatorioVendasDiaHorario } from "../../types";
+import type { PeriodoRelatorio, RelatorioVendasDiaHorario } from "../../types";
 import { obterVendasDiaHorario } from "../../services/relatorios";
-import { extrairErro, PeriodoTabs, RelatorioHeader } from "./lib";
+import { extrairErro, PeriodoSeletor, RelatorioHeader } from "./lib";
 import GraficoBarras, { type BarraDado } from "../../components/GraficoBarras";
 
 const icone = (
@@ -14,7 +14,7 @@ const icone = (
 );
 
 export default function VendasDiaHorarioPage() {
-  const [dias, setDias] = useState(30);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 30 });
   const [dados, setDados] = useState<RelatorioVendasDiaHorario | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -23,14 +23,14 @@ export default function VendasDiaHorarioPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterVendasDiaHorario(dias)
+    obterVendasDiaHorario(periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [dias]);
+  }, [periodo]);
 
   const porDia = dados?.por_dia_semana ?? [];
   const porHora = dados?.por_hora ?? [];
@@ -59,7 +59,7 @@ export default function VendasDiaHorarioPage() {
       <RelatorioHeader
         titulo="Vendas por dia e horário"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

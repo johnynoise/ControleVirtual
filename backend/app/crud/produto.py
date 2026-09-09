@@ -37,6 +37,7 @@ def criar(db: Session, dados: ProdutoCreate, categoria: Categoria) -> Produto:
         categoria_id=categoria.id,
         preco_custo=dados.preco_custo,
         preco_venda=dados.preco_venda,
+        preco_venda_prazo=dados.preco_venda_prazo,
         estoque=dados.estoque,
         estoque_minimo=dados.estoque_minimo,
         atributos=atributos,

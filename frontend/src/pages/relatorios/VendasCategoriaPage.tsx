@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { RelatorioVendasCategoria } from "../../types";
+import type { PeriodoRelatorio, RelatorioVendasCategoria } from "../../types";
 import { obterVendasCategoria } from "../../services/relatorios";
-import { brl, extrairErro, PeriodoTabs, pct, RelatorioHeader } from "./lib";
+import { brl, extrairErro, PeriodoSeletor, pct, RelatorioHeader } from "./lib";
 import { DonutChart } from "./Charts";
 
 const icone = (
@@ -14,7 +14,7 @@ const icone = (
 );
 
 export default function VendasCategoriaPage() {
-  const [dias, setDias] = useState(30);
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>({ dias: 30 });
   const [dados, setDados] = useState<RelatorioVendasCategoria | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -23,14 +23,14 @@ export default function VendasCategoriaPage() {
     let ativo = true;
     setCarregando(true);
     setErro(null);
-    obterVendasCategoria(dias)
+    obterVendasCategoria(periodo)
       .then((d) => ativo && setDados(d))
       .catch((e) => ativo && setErro(extrairErro(e)))
       .finally(() => ativo && setCarregando(false));
     return () => {
       ativo = false;
     };
-  }, [dias]);
+  }, [periodo]);
 
   const linhas = dados?.linhas ?? [];
 
@@ -39,7 +39,7 @@ export default function VendasCategoriaPage() {
       <RelatorioHeader
         titulo="Vendas por categoria"
         icone={icone}
-        acoes={<PeriodoTabs dias={dias} onChange={setDias} />}
+        acoes={<PeriodoSeletor periodo={periodo} onChange={setPeriodo} />}
       />
 
       {erro && <div className="alert erro">{erro}</div>}

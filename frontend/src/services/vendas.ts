@@ -53,6 +53,32 @@ export async function listarContasReceber(): Promise<ContaReceber[]> {
   return data;
 }
 
+/** Pedidos de delivery. Por padrão só os pendentes (fila de entrega). */
+export async function listarEntregas(
+  incluirEntregues = false
+): Promise<Venda[]> {
+  const { data } = await api.get<Venda[]>("/vendas/entregas", {
+    params: { incluir_entregues: incluirEntregues },
+  });
+  return data;
+}
+
+/** Confirma a entrega de um pedido de delivery (realiza a venda). */
+export async function confirmarEntrega(id: number): Promise<Venda> {
+  const { data } = await api.post<Venda>(`/vendas/${id}/confirmar-entrega`);
+  return data;
+}
+
+/** Vendas a prazo em aberto de um cliente, com os itens de cada compra. */
+export async function listarFiadoDoCliente(
+  clienteId: number
+): Promise<Venda[]> {
+  const { data } = await api.get<Venda[]>(
+    `/vendas/contas-a-receber/${clienteId}`
+  );
+  return data;
+}
+
 export interface EnviarReciboResposta {
   enviado: boolean;
   destinatario: string;
