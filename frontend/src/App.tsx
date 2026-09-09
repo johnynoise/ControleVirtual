@@ -21,6 +21,7 @@ const CategoriasPage = lazy(() => import("./pages/CategoriasPage"));
 const ContasReceberPage = lazy(() => import("./pages/ContasReceberPage"));
 const DespesasPage = lazy(() => import("./pages/DespesasPage"));
 const RelatoriosPage = lazy(() => import("./pages/RelatoriosPage"));
+const ResultadoPage = lazy(() => import("./pages/relatorios/ResultadoPage"));
 const FormaPagamentoPage = lazy(() => import("./pages/relatorios/FormaPagamentoPage"));
 const CurvaAbcPage = lazy(() => import("./pages/relatorios/CurvaAbcPage"));
 const SemGiroPage = lazy(() => import("./pages/relatorios/SemGiroPage"));
@@ -157,6 +158,14 @@ function App() {
             element={
               <Suspense fallback={<Carregando />}>
                 <RelatoriosPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="relatorios/resultado"
+            element={
+              <Suspense fallback={<Carregando />}>
+                <ResultadoPage />
               </Suspense>
             }
           />

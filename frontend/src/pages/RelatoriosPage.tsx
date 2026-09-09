@@ -76,9 +76,28 @@ const icones = {
       <path d="M9 8h3" />
     </svg>
   ),
+  dinheiro: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2v20" />
+      <path d="M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 2.8 5 3.2 5 1.3 5 3.3-2.2 3-5 3-5-1.1-5-3" />
+    </svg>
+  ),
 };
 
 const GRUPOS: GrupoRelatorio[] = [
+  {
+    nome: "Dinheiro",
+    icone: icones.dinheiro,
+    itens: [
+      {
+        to: "/relatorios/resultado",
+        titulo: "Resultado do período",
+        descricao:
+          "Quanto sobrou depois da mercadoria e das despesas, comparado com o período anterior.",
+        disponivel: true,
+      },
+    ],
+  },
   {
     nome: "Contabilidade",
     icone: icones.fiscal,

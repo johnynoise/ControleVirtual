@@ -305,3 +305,51 @@ class RelatorioClientesInativos(BaseModel):
     dias: int
     qtd_clientes: int
     linhas: list[ClienteInativoLinha]
+
+
+# ---------------------------------------------------------------------------
+# Apuração do resultado ("quanto sobrou").
+# ---------------------------------------------------------------------------
+
+
+class ApuracaoResultado(BaseModel):
+    """Cascata do resultado de um período. Usada no atual e no de comparação."""
+
+    receita: Decimal
+    cmv: Decimal  # custo da mercadoria vendida
+    lucro_bruto: Decimal
+    perdas: Decimal
+    despesas_operacionais: Decimal
+    resultado_operacional: Decimal  # a "sobra" do período
+    margem_bruta_percentual: Decimal
+    margem_liquida_percentual: Decimal
+    num_vendas: int
+    ticket_medio: Decimal
+    desconto_total: Decimal
+
+
+class DespesaCategoriaLinha(BaseModel):
+    categoria: str
+    categoria_rotulo: str
+    quantidade: int
+    total: Decimal
+    percentual: Decimal
+
+
+class RelatorioResultado(BaseModel):
+    dias: int
+    inicio: date
+    fim: date
+    # Recorte de comparação escolhido pelo backend (mês anterior quando o
+    # período começa no dia 1º, senão a janela anterior de mesma duração).
+    anterior_inicio: date
+    anterior_fim: date
+    atual: ApuracaoResultado
+    anterior: ApuracaoResultado
+    despesas_total: Decimal
+    despesas_nao_operacionais: Decimal
+    despesas_em_aberto: Decimal
+    despesas_quantidade: int
+    despesas_por_categoria: list[DespesaCategoriaLinha]
+    num_movimentacoes_perda: int
+    avisos: list[str]

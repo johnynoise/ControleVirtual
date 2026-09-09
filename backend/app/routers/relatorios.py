@@ -26,6 +26,7 @@ from app.schemas.relatorio import (
     RelatorioKardex,
     RelatorioPerdas,
     RelatorioRankingClientes,
+    RelatorioResultado,
     RelatorioSemGiro,
     RelatorioVendasCategoria,
     RelatorioVendasDiaHorario,
@@ -90,6 +91,18 @@ def resumo_periodo(
     periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
 ):
     return crud_relatorio.resumo(db, periodo)
+
+
+@router.get("/resultado", response_model=RelatorioResultado)
+def relatorio_resultado(
+    periodo: Periodo = Depends(periodo_param), db: Session = Depends(get_db)
+):
+    """Apuração do resultado do período, comparada com o período anterior.
+
+    O recorte de comparação é escolhido no ``crud``: mês anterior quando o
+    período começa no dia 1º, senão a janela anterior de mesma duração.
+    """
+    return crud_relatorio.resultado(db, periodo)
 
 
 @router.get("/vendas-por-dia", response_model=list[VendaDia])

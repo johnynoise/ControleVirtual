@@ -741,6 +741,51 @@ export interface RelatorioClientesInativos {
   linhas: ClienteInativoLinha[];
 }
 
+// ---------------------------------------------------------------------------
+// Apuração do resultado ("quanto sobrou").
+// ---------------------------------------------------------------------------
+
+/** Cascata do resultado de um período. Usada no atual e no de comparação. */
+export interface ApuracaoResultado {
+  receita: string;
+  cmv: string;
+  lucro_bruto: string;
+  perdas: string;
+  despesas_operacionais: string;
+  resultado_operacional: string;
+  margem_bruta_percentual: string;
+  margem_liquida_percentual: string;
+  num_vendas: number;
+  ticket_medio: string;
+  desconto_total: string;
+}
+
+export interface DespesaCategoriaLinha {
+  categoria: string;
+  categoria_rotulo: string;
+  quantidade: number;
+  total: string;
+  percentual: string;
+}
+
+export interface RelatorioResultado {
+  dias: number;
+  inicio: string;
+  fim: string;
+  /** Recorte de comparação escolhido pelo backend. */
+  anterior_inicio: string;
+  anterior_fim: string;
+  atual: ApuracaoResultado;
+  anterior: ApuracaoResultado;
+  despesas_total: string;
+  despesas_nao_operacionais: string;
+  despesas_em_aberto: string;
+  despesas_quantidade: number;
+  despesas_por_categoria: DespesaCategoriaLinha[];
+  num_movimentacoes_perda: number;
+  avisos: string[];
+}
+
 // --------------------------------------------------------------------------- //
 // Defeitos a acertar com o fornecedor
 // --------------------------------------------------------------------------- //

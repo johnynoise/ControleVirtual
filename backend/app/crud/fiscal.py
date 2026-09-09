@@ -431,12 +431,16 @@ def relatorio_anual(db: Session, periodo: Periodo) -> dict:
 
     cmv = _q(sum((Decimal(v.custo_total or 0) for v in vendas), Decimal("0")))
     receita_competencia = receita["total_competencia"]
-    lucro_bruto = (receita_competencia - cmv).quantize(_CENTAVOS)
     perdas_valor = _q(perdas["valor_perdas_estimado"])
     despesas_operacionais = _q(despesas["total_operacional"])
-    resultado_operacional = (
-        lucro_bruto - perdas_valor - despesas_operacionais
-    ).quantize(_CENTAVOS)
+
+    # Mesma conta do relatório de resultado, para as duas telas não divergirem.
+    apuracao = crud_relatorio.apurar_resultado(
+        receita=receita_competencia,
+        cmv=cmv,
+        perdas=perdas_valor,
+        despesas_operacionais=despesas_operacionais,
+    )
 
     return {
         "loja": loja,
@@ -472,13 +476,13 @@ def relatorio_anual(db: Session, periodo: Periodo) -> dict:
         },
         "resultado": {
             "receita_competencia": receita_competencia,
-            "cmv": cmv,
-            "lucro_bruto": lucro_bruto,
-            "perdas": perdas_valor,
-            "despesas_operacionais": despesas_operacionais,
-            "resultado_operacional": resultado_operacional,
-            "margem_bruta_percentual": _pct(lucro_bruto, receita_competencia),
-            "margem_liquida_percentual": _pct(resultado_operacional, receita_competencia),
+            "cmv": apuracao["cmv"],
+            "lucro_bruto": apuracao["lucro_bruto"],
+            "perdas": apuracao["perdas"],
+            "despesas_operacionais": apuracao["despesas_operacionais"],
+            "resultado_operacional": apuracao["resultado_operacional"],
+            "margem_bruta_percentual": apuracao["margem_bruta_percentual"],
+            "margem_liquida_percentual": apuracao["margem_liquida_percentual"],
         },
         "contas_a_receber": contas,
         "avisos": _avisos(periodo, receita, despesas, loja),

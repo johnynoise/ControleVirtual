@@ -5,6 +5,7 @@ Isso mantém o código agnóstico de banco (SQLite ou PostgreSQL) e é adequado
 ao volume de uma loja local. Se o volume crescer muito, dá para migrar para
 agregações no próprio banco.
 """
+import calendar
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -13,6 +14,7 @@ from typing import NamedTuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.crud import despesa as crud_despesa
 from app.models.categoria import Categoria
 from app.models.cliente import Cliente
 from app.models.movimentacao import MovimentacaoEstoque
@@ -952,3 +954,174 @@ def clientes_inativos(db: Session, dias: int) -> dict:
         "qtd_clientes": len(linhas),
         "linhas": linhas,
     }
+
+
+# ---------------------------------------------------------------------------
+# Apuração do resultado ("quanto sobrou").
+# ---------------------------------------------------------------------------
+
+
+def apurar_resultado(
+    receita: Decimal,
+    cmv: Decimal,
+    perdas: Decimal,
+    despesas_operacionais: Decimal,
+) -> dict:
+    """Cascata do resultado, na ordem em que ela é lida.
+
+    Receita − CMV = lucro bruto (o que a mercadoria deixou). Desse lucro saem
+    as perdas de estoque e as despesas operacionais, e o que resta é o
+    resultado operacional — a "sobra" do período.
+
+    É função pura de propósito: o relatório de resultado e o relatório fiscal
+    apuram pela mesma conta, então os dois não têm como divergir.
+    """
+    receita = _q(receita)
+    cmv = _q(cmv)
+    perdas = _q(perdas)
+    despesas_operacionais = _q(despesas_operacionais)
+
+    lucro_bruto = (receita - cmv).quantize(_CENTAVOS)
+    resultado_operacional = (
+        lucro_bruto - perdas - despesas_operacionais
+    ).quantize(_CENTAVOS)
+
+    return {
+        "receita": receita,
+        "cmv": cmv,
+        "lucro_bruto": lucro_bruto,
+        "perdas": perdas,
+        "despesas_operacionais": despesas_operacionais,
+        "resultado_operacional": resultado_operacional,
+        "margem_bruta_percentual": _pct(lucro_bruto, receita),
+        "margem_liquida_percentual": _pct(resultado_operacional, receita),
+    }
+
+
+def periodo_anterior(periodo: Periodo) -> Periodo:
+    """Período de comparação para o recorte informado.
+
+    Quando o recorte começa no dia 1º de um mês, compara com o mês anterior:
+    mês fechado contra mês fechado, ou — se o mês corrente ainda está em
+    andamento — o mesmo número de dias do mês anterior (o "do dia 1 até hoje"
+    contra "do dia 1 até o mesmo dia"), que é a comparação que a dona do
+    negócio faz de cabeça. Fora desse caso, usa a janela imediatamente
+    anterior de mesma duração.
+    """
+    inicio, fim = periodo.inicio_data, periodo.fim_data
+
+    mesmo_mes = (inicio.year, inicio.month) == (fim.year, fim.month)
+    if inicio.day == 1 and mesmo_mes:
+        ano_ant, mes_ant = (
+            (inicio.year, inicio.month - 1)
+            if inicio.month > 1
+            else (inicio.year - 1, 12)
+        )
+        ultimo_dia_ant = calendar.monthrange(ano_ant, mes_ant)[1]
+        ultimo_dia_atual = calendar.monthrange(inicio.year, inicio.month)[1]
+        # Mês inteiro: compara com o mês anterior inteiro. Mês em andamento:
+        # compara com o mesmo trecho do mês anterior (limitado ao seu tamanho).
+        dia_final = ultimo_dia_ant if fim.day >= ultimo_dia_atual else min(fim.day, ultimo_dia_ant)
+        return periodo_entre(date(ano_ant, mes_ant, 1), date(ano_ant, mes_ant, dia_final))
+
+    fim_anterior = inicio - timedelta(days=1)
+    return periodo_entre(fim_anterior - timedelta(days=periodo.dias - 1), fim_anterior)
+
+
+def _apuracao(db: Session, periodo: Periodo) -> dict:
+    """Números da apuração de um período (usado no atual e no de comparação)."""
+    vendas = vendas_do_periodo(db, periodo)
+
+    receita = sum((Decimal(v.total_liquido or 0) for v in vendas), Decimal("0"))
+    cmv = sum((Decimal(v.custo_total or 0) for v in vendas), Decimal("0"))
+    desconto = sum((Decimal(v.desconto or 0) for v in vendas), Decimal("0"))
+    num_vendas = len(vendas)
+
+    perdas = perdas_e_ajustes(db, periodo)
+    despesas = crud_despesa.resumo(
+        db, inicio=periodo.inicio_data, fim=periodo.fim_data
+    )
+
+    dados = apurar_resultado(
+        receita=receita,
+        cmv=cmv,
+        perdas=perdas["valor_perdas_estimado"],
+        despesas_operacionais=despesas["total_operacional"],
+    )
+    dados["num_vendas"] = num_vendas
+    dados["ticket_medio"] = (
+        (_q(receita) / num_vendas).quantize(_CENTAVOS) if num_vendas else Decimal("0.00")
+    )
+    dados["desconto_total"] = _q(desconto)
+    return {"resultado": dados, "despesas": despesas, "perdas": perdas}
+
+
+def resultado(db: Session, periodo: Periodo) -> dict:
+    """Apuração do resultado do período, comparada com o período anterior.
+
+    É o relatório que responde "quanto sobrou": sai da receita, desconta o
+    custo da mercadoria vendida, as perdas de estoque e as despesas
+    operacionais. As despesas entram por competência (o mês a que se referem),
+    pagas ou não — por isso a sobra apurada aqui não é o dinheiro em caixa.
+    """
+    atual = _apuracao(db, periodo)
+    anterior_periodo = periodo_anterior(periodo)
+    anterior = _apuracao(db, anterior_periodo)
+
+    despesas = atual["despesas"]
+
+    return {
+        "dias": periodo.dias,
+        "inicio": periodo.inicio_data,
+        "fim": periodo.fim_data,
+        "anterior_inicio": anterior_periodo.inicio_data,
+        "anterior_fim": anterior_periodo.fim_data,
+        "atual": atual["resultado"],
+        "anterior": anterior["resultado"],
+        "despesas_total": despesas["total"],
+        "despesas_nao_operacionais": despesas["total_nao_operacional"],
+        "despesas_em_aberto": despesas["total_em_aberto"],
+        "despesas_quantidade": despesas["quantidade"],
+        "despesas_por_categoria": despesas["por_categoria"],
+        "num_movimentacoes_perda": atual["perdas"]["num_movimentacoes"],
+        "avisos": _avisos_resultado(atual["resultado"], despesas),
+    }
+
+
+def _avisos_resultado(dados: dict, despesas: dict) -> list[str]:
+    """Ressalvas que mudam a leitura do número, quando se aplicam."""
+    avisos: list[str] = []
+
+    if dados["receita"] > 0 and despesas["total"] == 0:
+        avisos.append(
+            "Não há despesa lançada no período. Sem aluguel, energia, "
+            "embalagem e afins, a sobra aparece maior do que é de verdade. "
+            "Lance as despesas na tela de Despesas."
+        )
+
+    if despesas["total_em_aberto"] > 0:
+        avisos.append(
+            "Parte das despesas do período ainda não foi paga. Elas já entram "
+            "no resultado (competência), mas ainda não saíram do caixa."
+        )
+
+    if dados["resultado_operacional"] < 0:
+        avisos.append(
+            "O resultado do período ficou negativo: o lucro da mercadoria não "
+            "cobriu as despesas. Compare a margem bruta com o total de "
+            "despesas para ver o tamanho do buraco."
+        )
+
+    if dados["desconto_total"] > 0 and dados["receita"] > 0:
+        peso = _pct(dados["desconto_total"], dados["receita"] + dados["desconto_total"])
+        if peso >= Decimal("10"):
+            avisos.append(
+                f"Os descontos concedidos representam {peso}% do valor bruto "
+                "vendido. Vale olhar o relatório de descontos."
+            )
+
+    avisos.append(
+        "Despesas não operacionais (retiradas, investimentos) ficam fora do "
+        "resultado operacional e aparecem em separado."
+    )
+    return avisos

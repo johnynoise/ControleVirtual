@@ -2,6 +2,7 @@ import { api } from "./api";
 import type {
   MaisVendidos,
   PeriodoRelatorio,
+  RelatorioResultado,
   ResumoEstoque,
   ResumoPeriodo,
   VendaDia,
@@ -19,6 +20,15 @@ function params(periodo: PeriodoRelatorio): Record<string, string | number> {
 
 export async function obterResumo(periodo: PeriodoRelatorio): Promise<ResumoPeriodo> {
   const { data } = await api.get<ResumoPeriodo>("/relatorios/resumo", {
+    params: params(periodo),
+  });
+  return data;
+}
+
+export async function obterResultado(
+  periodo: PeriodoRelatorio
+): Promise<RelatorioResultado> {
+  const { data } = await api.get<RelatorioResultado>("/relatorios/resultado", {
     params: params(periodo),
   });
   return data;
