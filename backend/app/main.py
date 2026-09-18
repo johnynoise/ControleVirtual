@@ -1,9 +1,12 @@
 """Ponto de entrada da API do ControleVirtual."""
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 from app.config import settings
@@ -117,10 +120,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Libera o acesso do frontend (React) durante o desenvolvimento.
+# Libera o acesso do frontend (React). `frontend_origins` aceita uma lista
+# (CSV no .env), útil para liberar ao mesmo tempo o acesso local e o acesso
+# de outros dispositivos pela rede (ex.: celular acessando pelo IP do notebook).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=settings.frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -140,13 +145,40 @@ app.include_router(fiscal.router)
 app.include_router(configuracao.router)
 
 
-@app.get("/")
-def read_root():
-    """Rota raiz, apenas informativa."""
-    return {"app": settings.app_name, "status": "online"}
-
-
 @app.get("/health")
 def health_check():
     """Rota de verificação de saúde da API."""
     return {"status": "ok"}
+
+
+# --------------------------------------------------------------------- #
+# Serve o build do frontend (frontend/dist), quando presente.
+#
+# Isso permite rodar a aplicação inteira numa porta só: o próprio backend
+# entrega o site e a API. Útil para expor o app na rede local (ex.: o
+# notebook funcionando como servidor) sem precisar manter um segundo
+# processo (vite preview) e uma segunda porta abertos.
+#
+# Gere o build com `npm run build` dentro de frontend/ antes de rodar em
+# modo servidor. Em desenvolvimento (vite dev, porta 5173) essa pasta
+# normalmente não existe e este bloco é ignorado.
+# --------------------------------------------------------------------- #
+_frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+if _frontend_dist.is_dir():
+    app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="assets")
+
+    @app.get("/")
+    @app.get("/{caminho_completo:path}")
+    def servir_frontend(caminho_completo: str = ""):
+        """Entrega os arquivos do frontend; para rotas desconhecidas, cai no index.html (SPA)."""
+        candidato = _frontend_dist / caminho_completo
+        if caminho_completo and candidato.is_file():
+            return FileResponse(candidato)
+        return FileResponse(_frontend_dist / "index.html")
+else:
+
+    @app.get("/")
+    def read_root():
+        """Rota raiz informativa (sem build do frontend disponível)."""
+        return {"app": settings.app_name, "status": "online"}

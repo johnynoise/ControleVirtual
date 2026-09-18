@@ -104,7 +104,7 @@ export function montarMensagemCobranca(
   const linhas: string[] = [
     saudacao,
     "",
-    "Segue o resumo do seu fiado em aberto:",
+    "Segue o resumo das suas compras a prazo em aberto:",
     "",
   ];
 

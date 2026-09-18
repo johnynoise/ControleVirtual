@@ -24,7 +24,7 @@ const PAGAMENTOS: { valor: FormaPagamento; rotulo: string; icone: string }[] = [
   { valor: "pix", rotulo: "PIX", icone: "⚡" },
   { valor: "cartao_credito", rotulo: "Crédito", icone: "💳" },
   { valor: "cartao_debito", rotulo: "Débito", icone: "🏦" },
-  { valor: "fiado", rotulo: "Fiado", icone: "📓" },
+  { valor: "fiado", rotulo: "A prazo", icone: "📓" },
   { valor: "outro", rotulo: "Outro", icone: "•" },
 ];
 
@@ -48,6 +48,15 @@ function precoTabela(p: Produto, forma: FormaPagamento): number {
   return parseFloat(bruto) || 0;
 }
 
+// Preço em texto no padrão brasileiro (sem símbolo), para preencher o campo
+// editável de preço do item. Ex.: 12.5 → "12,50" · 1234.5 → "1.234,50".
+function precoParaTexto(valor: number): string {
+  return valor.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 // Data (YYYY-MM-DD, fuso local) daqui a `offsetDias` dias — usada como
 // vencimento padrão sugerido para cada parcela.
 function dataISO(offsetDias: number): string {
@@ -65,6 +74,10 @@ export default function VendasPage() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // Trava síncrona contra finalização em dobro. O `salvando` do estado só vale
+  // no próximo render, então dois F2 rápidos escapariam dele (o botão fica
+  // desabilitado, mas o atalho de teclado não passa pelo botão).
+  const salvandoRef = useRef(false);
 
   // Busca de produtos no catálogo.
   const [busca, setBusca] = useState("");
@@ -95,12 +108,32 @@ export default function VendasPage() {
   // (evita alteração acidental de preço no balcão).
   const [precosAbertos, setPrecosAbertos] = useState<number[]>([]);
 
+  // Texto do campo de preço enquanto está sendo digitado, por produto. Precisa
+  // ser string: guardar só o número faria a vírgula desaparecer no meio da
+  // digitação ("12," → 12 → "12"), e "12,50" acabaria virando 1250.
+  const [precoTexto, setPrecoTexto] = useState<Record<number, string>>({});
+
   function alternarPreco(produto_id: number) {
-    setPrecosAbertos((atual) =>
-      atual.includes(produto_id)
-        ? atual.filter((id) => id !== produto_id)
-        : [...atual, produto_id]
-    );
+    if (precosAbertos.includes(produto_id)) {
+      setPrecosAbertos((atual) => atual.filter((id) => id !== produto_id));
+      descartarPrecoTexto(produto_id);
+      return;
+    }
+    const item = carrinho.find((i) => i.produto_id === produto_id);
+    setPrecoTexto((atual) => ({
+      ...atual,
+      [produto_id]: item ? precoParaTexto(item.preco_unitario) : "",
+    }));
+    setPrecosAbertos((atual) => [...atual, produto_id]);
+  }
+
+  function descartarPrecoTexto(produto_id: number) {
+    setPrecoTexto((atual) => {
+      if (!(produto_id in atual)) return atual;
+      const novo = { ...atual };
+      delete novo[produto_id];
+      return novo;
+    });
   }
 
   // Trocar a forma de pagamento re-precifica o carrinho: o fiado usa o preço a
@@ -115,6 +148,11 @@ export default function VendasPage() {
         return novo === i.preco_unitario ? i : { ...i, preco_unitario: novo };
       })
     );
+    // Os preços acabaram de ser re-derivados, então qualquer campo de preço
+    // aberto está exibindo um valor velho. Trava os campos: o valor já digitado
+    // continua no carrinho (preco_editado protege), só o editor fecha.
+    setPrecosAbertos([]);
+    setPrecoTexto({});
   }, [formaPagamento, produtos]);
 
   // Cadastro rápido de cliente direto na tela de venda.
@@ -132,6 +170,14 @@ export default function VendasPage() {
     recebido: number;
     troco: number;
   } | null>(null);
+
+  // Erro de ação: o banner no topo da página pode estar fora da área visível
+  // quando o operador está trabalhando no carrinho, então toda falha também
+  // aparece como toast.
+  function falhar(mensagem: string) {
+    setErro(mensagem);
+    toast.erro(mensagem);
+  }
 
   async function carregar() {
     setCarregando(true);
@@ -154,6 +200,15 @@ export default function VendasPage() {
 
   useEffect(() => {
     carregar();
+  }, []);
+
+  // O balcão ocupa a viewport inteira e não rola: todo o scroll acontece dentro
+  // do catálogo e do carrinho. A classe no <body> neutraliza o limite de largura
+  // e o padding do container de página padrão, só enquanto esta tela está
+  // aberta (em telas estreitas o layout empilha e volta a rolar normalmente).
+  useEffect(() => {
+    document.body.classList.add("pdv-ativo");
+    return () => document.body.classList.remove("pdv-ativo");
   }, []);
 
   // Foco automático na busca ao abrir (fluxo rápido de balcão).
@@ -200,16 +255,22 @@ export default function VendasPage() {
     const termo = busca.trim().toLowerCase();
     // Busca tem prioridade sobre a categoria: ao digitar (ou ler um código de
     // barras), procura no catálogo inteiro, independentemente da aba ativa.
-    if (termo) {
-      return produtos.filter(
-        (p) =>
-          p.nome.toLowerCase().includes(termo) ||
-          (p.sku ?? "").toLowerCase().includes(termo) ||
-          (p.codigo_barras ?? "").toLowerCase().includes(termo)
-      );
-    }
-    if (catFiltro === "todas") return produtos;
-    return produtos.filter((p) => p.categoria_id === catFiltro);
+    const base = termo
+      ? produtos.filter(
+          (p) =>
+            p.nome.toLowerCase().includes(termo) ||
+            (p.sku ?? "").toLowerCase().includes(termo) ||
+            (p.codigo_barras ?? "").toLowerCase().includes(termo)
+        )
+      : catFiltro === "todas"
+        ? produtos
+        : produtos.filter((p) => p.categoria_id === catFiltro);
+    // Esgotados vão para o fim: não são vendáveis, então não ocupam as
+    // primeiras posições da grade nem o alvo do Enter na busca. O sort é
+    // estável, logo a ordem original é preservada dentro de cada grupo.
+    return [...base].sort(
+      (a, b) => Number(a.estoque <= 0) - Number(b.estoque <= 0)
+    );
   }, [produtos, busca, catFiltro]);
 
   const totalBruto = useMemo(
@@ -223,11 +284,21 @@ export default function VendasPage() {
   // O desconto pode ser informado em reais ou em percentual do subtotal.
   // O backend sempre recebe o valor em reais (descontoValor).
   const descontoDigitado = parseNumero(desconto);
-  const descontoValor =
+  // Valor pedido pelo operador, antes de qualquer limite.
+  const descontoPedido =
     descontoTipo === "percent"
-      ? totalBruto * (Math.min(100, Math.max(0, descontoDigitado)) / 100)
+      ? totalBruto * (Math.max(0, descontoDigitado) / 100)
       : Math.max(0, descontoDigitado);
-  const totalLiquido = Math.max(0, totalBruto - descontoValor);
+  // O desconto nunca passa do subtotal. Antes o excesso era absorvido em
+  // silêncio pelo Math.max(0, ...) do total, então um erro de digitação
+  // (R$ 500 num total de R$ 50) fechava a venda por R$ 0,00 sem nenhum aviso.
+  const descontoValor = Math.min(descontoPedido, totalBruto);
+  const descontoExcedido = totalBruto > 0 && descontoPedido - totalBruto > 0.005;
+  const totalLiquido = totalBruto - descontoValor;
+  // Percentual efetivo, para o operador conferir a ordem de grandeza.
+  const descontoPercentual =
+    totalBruto > 0 ? (descontoValor / totalBruto) * 100 : 0;
+  const vendaZerada = totalBruto > 0 && totalLiquido < 0.005;
 
   // Valores de cada parcela: divide o total igualmente em centavos e joga a
   // sobra do arredondamento na última parcela (ex.: 100/3 → 33,33 · 33,33 · 33,34).
@@ -345,7 +416,12 @@ export default function VendasPage() {
   }
 
   function definirPreco(produto_id: number, valor: string) {
-    const preco = Math.max(0, parseNumero(valor));
+    // Aceita apenas dígitos e separadores decimais, preservando o texto como
+    // digitado (inclusive a vírgula solta em "12,") para não atropelar o
+    // operador no meio do número.
+    const texto = valor.replace(/[^\d.,]/g, "");
+    setPrecoTexto((atual) => ({ ...atual, [produto_id]: texto }));
+    const preco = Math.max(0, parseNumero(texto));
     setCarrinho((atual) =>
       atual.map((i) =>
         i.produto_id === produto_id
@@ -355,9 +431,22 @@ export default function VendasPage() {
     );
   }
 
+  // Ao sair do campo, reescreve o texto no formato canônico ("12,5" → "12,50").
+  function normalizarPreco(produto_id: number) {
+    const item = carrinho.find((i) => i.produto_id === produto_id);
+    if (!item) return;
+    setPrecoTexto((atual) =>
+      // Se o campo já foi travado (Enter/botão), não recria o rascunho.
+      produto_id in atual
+        ? { ...atual, [produto_id]: precoParaTexto(item.preco_unitario) }
+        : atual
+    );
+  }
+
   function removerDoCarrinho(produto_id: number) {
     setCarrinho((atual) => atual.filter((i) => i.produto_id !== produto_id));
     setPrecosAbertos((atual) => atual.filter((id) => id !== produto_id));
+    descartarPrecoTexto(produto_id);
   }
 
   function definirVencimento(indice: number, valor: string) {
@@ -400,7 +489,7 @@ export default function VendasPage() {
 
   async function salvarNovoCliente() {
     if (ncNome.trim() === "") {
-      setErro("Informe o nome do cliente.");
+      falhar("Informe o nome do cliente.");
       return;
     }
     setSalvandoCliente(true);
@@ -418,7 +507,7 @@ export default function VendasPage() {
       cancelarNovoCliente();
       toast.sucesso(`Cliente ${criado.nome} cadastrado.`);
     } catch (err) {
-      setErro(extrairErro(err));
+      falhar(extrairErro(err));
     } finally {
       setSalvandoCliente(false);
     }
@@ -433,6 +522,7 @@ export default function VendasPage() {
     setDescontoTipo("reais");
     setRecebido("");
     setPrecosAbertos([]);
+    setPrecoTexto({});
     setBusca("");
     setNumParcelas(1);
     setVencimentos([]);
@@ -440,30 +530,30 @@ export default function VendasPage() {
   }
 
   async function finalizar() {
+    // Trava de reentrada: protege contra F2 repetido durante a requisição, que
+    // gravaria a mesma venda duas vezes (o carrinho só é limpo no retorno).
+    if (salvandoRef.current) return;
     if (carrinho.length === 0) {
-      setErro("Adicione pelo menos um item à venda.");
+      falhar("Adicione pelo menos um item à venda.");
       return;
     }
     if (formaPagamento === "fiado" && clienteId === "") {
-      setErro("Venda no fiado exige um cliente. Selecione ou cadastre um.");
-      toast.erro("Selecione um cliente para vender no fiado.");
+      falhar("Venda a prazo exige um cliente. Selecione ou cadastre um.");
       return;
     }
     // Delivery: a entrega vai para o endereço cadastrado do cliente.
     let enderecoDelivery: string | undefined;
     if (entrega) {
       if (clienteId === "") {
-        setErro("Delivery exige um cliente selecionado (com endereço).");
-        toast.erro("Selecione um cliente para a entrega.");
+        falhar("Delivery exige um cliente selecionado (com endereço).");
         return;
       }
       const cli = clientes.find((c) => c.id === clienteId);
       const end = (cli?.endereco ?? "").trim();
       if (!end) {
-        setErro(
+        falhar(
           "O cliente selecionado não tem endereço cadastrado. Edite o cliente para adicionar."
         );
-        toast.erro("Cliente sem endereço cadastrado.");
         return;
       }
       enderecoDelivery = end;
@@ -473,8 +563,7 @@ export default function VendasPage() {
     let parcelas: ParcelaCreate[] | undefined;
     if (formaPagamento === "fiado") {
       if (vencimentos.slice(0, numParcelas).some((d) => !d)) {
-        setErro("Informe a data de vencimento de cada parcela.");
-        toast.erro("Informe a data de vencimento de cada parcela.");
+        falhar("Informe a data de vencimento de cada parcela.");
         return;
       }
       parcelas = valoresParcelas.map((valor, k) => ({
@@ -484,6 +573,7 @@ export default function VendasPage() {
       }));
     }
 
+    salvandoRef.current = true;
     setSalvando(true);
     setErro(null);
 
@@ -529,15 +619,18 @@ export default function VendasPage() {
       }
       buscaRef.current?.focus();
     } catch (err) {
-      setErro(extrairErro(err));
+      falhar(extrairErro(err));
     } finally {
+      salvandoRef.current = false;
       setSalvando(false);
     }
   }
 
   return (
-    <div className="page">
-      <div className="pdv-topbar">
+    <div className="page pdv-page">
+      {/* Uma única faixa compacta: no balcão, cada pixel de altura vale mais
+          como produto visível do que como cabeçalho. */}
+      <header className="pdv-topbar">
         <div className="page-title">
           <span className="title-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -546,28 +639,30 @@ export default function VendasPage() {
               <path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
             </svg>
           </span>
-          <div>
-            <h1>Ponto de venda</h1>
-            <p className="pdv-sub">Toque nos produtos para montar a venda.</p>
-          </div>
+          <h1>Ponto de venda</h1>
         </div>
-        <Link to="/vendas/historico" className="btn secundario">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 3v5h5" />
-            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-            <path d="M12 7v5l4 2" />
-          </svg>
-          Histórico
-        </Link>
-      </div>
 
-      <div className="pdv-atalhos">
-        <span><kbd>F2</kbd> Finalizar</span>
-        <span><kbd>F3</kbd> Buscar</span>
-        <span><kbd>F4</kbd> Novo cliente</span>
-        <span><kbd>Enter</kbd> Adicionar 1º resultado</span>
-        <span><kbd>Esc</kbd> Fechar</span>
-      </div>
+        <div className="pdv-topbar-dir">
+          <div className="pdv-atalhos">
+            <span><kbd>F2</kbd> Finalizar</span>
+            <span><kbd>F3</kbd> Buscar</span>
+            <span><kbd>F4</kbd> Cliente</span>
+            <span><kbd>Esc</kbd> Fechar</span>
+          </div>
+          <Link
+            to="/vendas/historico"
+            className="btn secundario pequeno"
+            title="Histórico de vendas"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 3v5h5" />
+              <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+              <path d="M12 7v5l4 2" />
+            </svg>
+            Histórico
+          </Link>
+        </div>
+      </header>
 
       {erro && <div className="alert erro">{erro}</div>}
 
@@ -634,7 +729,12 @@ export default function VendasPage() {
                     type="button"
                     className={`pdv-produto${semEstoque ? " sem-estoque" : ""}`}
                     onClick={() => adicionarProduto(p)}
-                    title={semEstoque ? "Sem estoque" : `Adicionar ${p.nome}`}
+                    disabled={semEstoque}
+                    title={
+                      semEstoque
+                        ? `${p.nome} está sem estoque`
+                        : `Adicionar ${p.nome}`
+                    }
                   >
                     <span
                       className="pdv-produto-avatar"
@@ -712,10 +812,18 @@ export default function VendasPage() {
                           <input
                             type="text"
                             inputMode="decimal"
-                            value={i.preco_unitario}
+                            value={precoTexto[i.produto_id] ?? ""}
                             onChange={(e) =>
                               definirPreco(i.produto_id, e.target.value)
                             }
+                            onBlur={() => normalizarPreco(i.produto_id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                alternarPreco(i.produto_id);
+                              }
+                            }}
+                            aria-label={`Preço unitário de ${i.produto_nome}`}
                             autoFocus
                           />
                         </label>
@@ -894,7 +1002,14 @@ export default function VendasPage() {
                     </p>
                   ))}
               </div>
+              </div>
+              {/* ↑ fim do corpo rolável (itens, cliente, entrega) */}
 
+              {/* Fechamento da venda, fixo no rodapé do painel: tudo o que é
+                  preciso para fechar (pagamento, desconto, total, troco) fica
+                  visível sem depender de rolar um carrinho cheio. Só cresce
+                  além do limite no fiado parcelado, e aí rola por dentro. */}
+              <div className="pdv-fechamento">
               <div className="pdv-pagamento">
                 <span className="pdv-label">Forma de pagamento</span>
                 <div className="pdv-pgto-pills">
@@ -915,7 +1030,7 @@ export default function VendasPage() {
                     className={`pdv-fiado-aviso${clienteId === "" ? " alerta" : ""}`}
                   >
                     {clienteId === ""
-                      ? "⚠ Selecione um cliente acima: o fiado fica no nome dele."
+                      ? "⚠ Selecione um cliente acima: a venda a prazo fica no nome dele."
                       : "📓 Esta venda entra como saldo devedor do cliente."}
                   </p>
                 )}
@@ -1000,13 +1115,29 @@ export default function VendasPage() {
                     />
                   </div>
                 </div>
-                {descontoTipo === "percent" && descontoValor > 0 && (
+                {descontoValor > 0 && (
                   <div className="pdv-linha-desc">
-                    <span>Desconto aplicado</span>
+                    <span>
+                      Desconto aplicado{" "}
+                      <span className="pdv-desc-pct">
+                        ({descontoPercentual.toFixed(descontoPercentual < 10 ? 1 : 0)}%)
+                      </span>
+                    </span>
                     <span>− {brl(descontoValor)}</span>
                   </div>
                 )}
-                <div className="pdv-total">
+                {descontoExcedido && (
+                  <p className="pdv-desc-aviso" role="alert">
+                    ⚠ Desconto de {brl(descontoPedido)} é maior que o subtotal.
+                    Aplicando no máximo {brl(totalBruto)}.
+                  </p>
+                )}
+                {vendaZerada && !descontoExcedido && (
+                  <p className="pdv-desc-aviso" role="alert">
+                    ⚠ O desconto zerou a venda. Confira antes de finalizar.
+                  </p>
+                )}
+                <div className={`pdv-total${vendaZerada ? " zerado" : ""}`}>
                   <span>Total</span>
                   <strong>{brl(totalLiquido)}</strong>
                 </div>
@@ -1051,6 +1182,7 @@ export default function VendasPage() {
                 )}
               </div>
               </div>
+              {/* ↑ fim do fechamento; o botão fica fora dele para não rolar */}
 
               <button
                 className="btn primario pdv-finalizar"
@@ -1061,7 +1193,7 @@ export default function VendasPage() {
                   ? entrega
                     ? "Registrando..."
                     : "Finalizando..."
-                  : `${entrega ? "Registrar entrega" : formaPagamento === "fiado" ? "Fiar" : "Finalizar"} · ${brl(totalLiquido)}`}
+                  : `${entrega ? "Registrar entrega" : formaPagamento === "fiado" ? "Vender a prazo" : "Finalizar"} · ${brl(totalLiquido)}`}
                 {!salvando && <kbd className="pdv-kbd-btn">F2</kbd>}
               </button>
             </>

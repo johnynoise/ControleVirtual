@@ -7,7 +7,7 @@ export const PAGAMENTOS: Record<string, { rotulo: string; icone: string }> = {
   pix: { rotulo: "PIX", icone: "⚡" },
   cartao_credito: { rotulo: "Crédito", icone: "💳" },
   cartao_debito: { rotulo: "Débito", icone: "🏦" },
-  fiado: { rotulo: "Fiado", icone: "📓" },
+  fiado: { rotulo: "A prazo", icone: "📓" },
   outro: { rotulo: "Outro", icone: "•" },
 };
 

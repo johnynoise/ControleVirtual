@@ -63,7 +63,7 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
     # devedor tenha a quem ser cobrado.
     eh_fiado = dados.forma_pagamento == FormaPagamento.fiado
     if eh_fiado and cliente_id is None:
-        raise ErroVenda("Venda a prazo (fiado) exige um cliente identificado.")
+        raise ErroVenda("Venda a prazo exige um cliente identificado.")
 
     # Delivery: nasce como pedido pendente. Não baixa estoque nem gera
     # movimentação agora — isso só acontece quando a entrega for confirmada.
@@ -155,7 +155,7 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
     if dados.parcelas:
         if not eh_fiado:
             raise ErroVenda(
-                "Parcelamento só é permitido em vendas a prazo (fiado)."
+                "Parcelamento só é permitido em vendas a prazo."
             )
         if len(dados.parcelas) > 3:
             raise ErroVenda("O parcelamento permite no máximo 3 parcelas.")

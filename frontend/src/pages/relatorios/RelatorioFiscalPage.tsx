@@ -398,7 +398,7 @@ export default function RelatorioFiscalPage() {
             <p className="subtitle">
               <strong>Competência</strong> é a data da venda; <strong>caixa</strong>{" "}
               é a data em que o dinheiro entrou. Numa venda à vista as duas
-              coincidem; no fiado, a competência é a venda e o caixa são os
+              coincidem; nas vendas a prazo, a competência é a venda e o caixa são os
               pagamentos, que podem cair em outro mês.
             </p>
             <table className="tabela">
@@ -655,7 +655,7 @@ export default function RelatorioFiscalPage() {
           <div className="card">
             <h2>Contas a receber em aberto</h2>
             <p className="subtitle">
-              Posição do fiado em {dataBR(r.fim)}: vendas a prazo feitas até essa
+              Posição das vendas a prazo em {dataBR(r.fim)}: vendas feitas até essa
               data, menos os pagamentos recebidos até ela.
             </p>
             <div className="kpis fiscal-kpis">

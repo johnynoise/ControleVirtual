@@ -16,7 +16,7 @@ const ROTULO_PAGAMENTO: Record<string, string> = {
   pix: "PIX",
   cartao_credito: "Crédito",
   cartao_debito: "Débito",
-  fiado: "Fiado",
+  fiado: "A prazo",
   outro: "Outro",
 };
 

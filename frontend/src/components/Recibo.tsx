@@ -6,7 +6,7 @@ const PAGAMENTO_LABEL: Record<string, string> = {
   pix: "PIX",
   cartao_credito: "Cartão de crédito",
   cartao_debito: "Cartão de débito",
-  fiado: "Fiado (a prazo)",
+  fiado: "A prazo",
   outro: "Outro",
 };
 

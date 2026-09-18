@@ -257,7 +257,7 @@ export default function ClientesPage() {
         ) : clientes.length === 0 ? (
           <EstadoVazio
             titulo="Nenhum cliente cadastrado"
-            descricao="Cadastre seus clientes para acompanhar compras, vender no fiado e enviar recibos."
+            descricao="Cadastre seus clientes para acompanhar compras, vender a prazo e enviar recibos."
             acao={{ rotulo: "Cadastrar primeiro cliente", onClick: abrirNovo }}
           />
         ) : clientesFiltrados.length === 0 ? (

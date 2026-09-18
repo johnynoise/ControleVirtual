@@ -11,7 +11,15 @@ class Settings(BaseSettings):
     # DATABASE_URL para o PostgreSQL, ex.:
     # postgresql://postgres:postgres@localhost:5432/controle_virtual
     database_url: str = "sqlite:///./controle_virtual.db"
+    # Uma ou mais origens permitidas pelo CORS, separadas por vírgula. Ex.:
+    # "http://localhost:5173,http://192.168.0.10:5173" para liberar tanto o
+    # acesso local quanto o acesso de outros dispositivos pela rede.
     frontend_origin: str = "http://localhost:5173"
+
+    @property
+    def frontend_origins(self) -> list[str]:
+        """Lista de origens do CORS, a partir de `frontend_origin` (CSV)."""
+        return [origem.strip() for origem in self.frontend_origin.split(",") if origem.strip()]
 
     # Nome da loja exibido no cabeçalho do recibo (PDF e email).
     loja_nome: str = "ControleVirtual"

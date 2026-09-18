@@ -120,7 +120,7 @@ const GRUPOS: { titulo: string; itens: Link[] }[] = [
     itens: [
       { to: "/vendas/historico", rotulo: "Histórico", icone: "historico" },
       { to: "/delivery", rotulo: "Delivery", icone: "delivery" },
-      { to: "/contas-a-receber", rotulo: "Fiado", icone: "fiado" },
+      { to: "/contas-a-receber", rotulo: "A prazo", icone: "fiado" },
       { to: "/defeitos", rotulo: "Defeitos", icone: "defeitos" },
     ],
   },

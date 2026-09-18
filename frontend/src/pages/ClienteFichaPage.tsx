@@ -155,7 +155,7 @@ export default function ClienteFichaPage() {
               )}
             </div>
             <div className="kpi">
-              <span className="kpi-label">Saldo devedor (fiado)</span>
+              <span className="kpi-label">Saldo devedor (a prazo)</span>
               <span
                 className={`kpi-valor ${parseFloat(ficha.saldo_devedor) > 0 ? "ambar" : ""}`}
               >
@@ -219,7 +219,7 @@ export default function ClienteFichaPage() {
                       <tr key={c.id} className={c.estornada ? "inativo" : undefined}>
                         <td className="muted">{dataHora(c.criado_em)}</td>
                         <td className="muted">
-                          {c.forma_pagamento === "fiado" ? "Fiado" : c.forma_pagamento ?? "—"}
+                          {c.forma_pagamento === "fiado" ? "A prazo" : c.forma_pagamento ?? "—"}
                         </td>
                         <td className="num">{c.num_itens}</td>
                         <td className="num">{brl(c.total_liquido)}</td>
@@ -228,10 +228,10 @@ export default function ClienteFichaPage() {
                             <span className="chip mov-saida">Estornada</span>
                           ) : fiadoAberto ? (
                             <span className="chip fiado" title={`Falta ${brl(saldo)}`}>
-                              Fiado · falta {brl(saldo)}
+                              A prazo · falta {brl(saldo)}
                             </span>
                           ) : c.a_prazo ? (
-                            <span className="chip quitado">Fiado quitado</span>
+                            <span className="chip quitado">A prazo quitado</span>
                           ) : c.tem_devolucao ? (
                             <span className="chip mov-ajuste">Troca parcial</span>
                           ) : (

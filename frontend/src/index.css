@@ -1707,6 +1707,9 @@ td.vermelho,
 /* ------------------------------------------------------------------ */
 /* PDV — Ponto de venda (tela de balcão)                               */
 /* ------------------------------------------------------------------ */
+/* Barra de topo com título e ação à direita. Compartilhada com Histórico,
+   Delivery, Defeitos e Contas a receber — as sobrecargas do balcão ficam
+   escopadas em `.pdv-page` mais abaixo. */
 .pdv-topbar {
   display: flex;
   align-items: flex-start;
@@ -1724,6 +1727,37 @@ td.vermelho,
   color: var(--text-muted);
   font-size: 0.92rem;
   margin-top: 0.15rem;
+}
+
+/* --- Faixa de topo do balcão: uma linha só, o mais baixa possível. Altura
+   gasta aqui é produto que deixa de aparecer na grade. --- */
+.pdv-page .pdv-topbar {
+  align-items: center;
+  margin-bottom: 0.9rem;
+  flex-shrink: 0;
+}
+
+.pdv-topbar-dir {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.pdv-page h1 {
+  font-size: 1.35rem;
+  margin-bottom: 0;
+}
+
+.pdv-page .page-title .title-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.pdv-page .page-title .title-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* Grade principal: catálogo à esquerda, carrinho fixo à direita. */
@@ -1744,9 +1778,12 @@ td.vermelho,
   max-height: calc(100vh - 3rem);
 }
 
+/* `.busca` traz `flex: 1` para ocupar a largura em barras horizontais. Aqui o
+   pai é uma coluna, então crescer significaria esticar o campo na vertical e
+   deixar um vazio enorme acima da grade — daí o flex-grow zerado. */
 .pdv-busca {
+  flex: 0 0 auto;
   margin-bottom: 1.1rem;
-  flex-shrink: 0;
 }
 
 /* Grade de produtos clicáveis: rola dentro do próprio card. */
@@ -1785,8 +1822,20 @@ td.vermelho,
   transform: translateY(1px);
 }
 
+/* Esgotado: não é vendável, então o card não responde a clique nem a hover.
+   Vai também para o fim da grade (ordenação em produtosFiltrados). */
 .pdv-produto.sem-estoque {
-  opacity: 0.55;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pdv-produto.sem-estoque:hover {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.pdv-produto:disabled:active {
+  transform: none;
 }
 
 .pdv-produto-avatar {
@@ -2116,8 +2165,9 @@ td.vermelho,
   color: var(--text);
 }
 
+/* Primeiro bloco do fechamento, já dentro da área fixa do rodapé. */
 .pdv-pagamento {
-  margin-top: 0.9rem;
+  margin-top: 0;
 }
 
 .pdv-label {
@@ -2128,24 +2178,29 @@ td.vermelho,
   margin-bottom: 0.5rem;
 }
 
+/* Grade fixa de 3 colunas em vez de flex-wrap: com 6 formas de pagamento são
+   sempre 2 linhas, então a altura do bloco de fechamento é previsível. */
 .pdv-pgto-pills {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.4rem;
 }
 
 .pdv-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.45rem 0.7rem;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.45rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
@@ -2165,10 +2220,22 @@ td.vermelho,
   line-height: 1;
 }
 
-.pdv-totais {
-  margin-top: 1rem;
-  padding-top: 0.9rem;
+/* Fechamento da venda: fora da área rolável, colado ao rodapé do painel, para
+   que pagamento, total e troco nunca saiam de vista com o carrinho cheio.
+   O `max-height` é uma válvula de segurança para o único caso que estoura o
+   espaço — fiado em 3 parcelas, que acrescenta três linhas de vencimento. Nas
+   formas à vista o conteúdo cabe e nada rola aqui. */
+.pdv-fechamento {
+  flex: 0 0 auto;
+  max-height: 58%;
+  overflow-y: auto;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
   border-top: 1px solid var(--border);
+}
+
+.pdv-totais {
+  margin-top: 0.85rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -2223,9 +2290,32 @@ td.vermelho,
   font-variant-numeric: tabular-nums;
 }
 
+/* Total zerado por desconto: destaca em âmbar para o operador conferir. */
+.pdv-total.zerado strong {
+  color: var(--ambar);
+}
+
+/* Percentual efetivo ao lado do desconto aplicado. */
+.pdv-desc-pct {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* Aviso de desconto acima do subtotal (ou que zera a venda). */
+.pdv-desc-aviso {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--ambar);
+  background: var(--ambar-suave);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
 .pdv-finalizar {
+  flex: 0 0 auto;
   width: 100%;
-  margin-top: 1rem;
+  margin-top: 0.85rem;
   padding: 0.95rem 1rem;
   font-size: 1.08rem;
   border-radius: var(--raio-md);
@@ -2249,14 +2339,78 @@ td.vermelho,
   }
 }
 
-/* Barra de dicas de atalhos do PDV */
+/* ------------------------------------------------------------------ */
+/* PDV em tela cheia                                                   */
+/* ------------------------------------------------------------------ */
+/* A tela de balcão ocupa exatamente a viewport e não rola: o scroll da página
+   competia com os dois scrolls internos (grade e carrinho), e o cabeçalho
+   comia altura que vale mais como produto visível. A classe `pdv-ativo` é
+   posta no <body> pela VendasPage e removida ao sair, então nenhuma outra tela
+   é afetada. Abaixo de 1024px o layout empilha e o scroll normal volta. */
+@media (min-width: 1025px) {
+  body.pdv-ativo {
+    overflow: hidden;
+  }
+
+  body.pdv-ativo .app-shell {
+    /* 100vh como fallback: navegadores sem `dvh` ignoram a segunda linha e
+       ainda assim recebem uma altura definida (o body está com overflow
+       escondido, então sem isso o conteúdo seria cortado). */
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  /* Sem limite de largura aqui: a grade de produtos aproveita a tela inteira
+     em vez de ficar presa nos 1080px do container padrão. */
+  body.pdv-ativo .content {
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    padding: 1.1rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .pdv-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .pdv-layout {
+    flex: 1;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  /* Os painéis já são colunas flex; aqui deixam de ser sticky e passam a
+     preencher a altura disponível, cada um com o seu próprio scroll. */
+  .pdv-catalogo,
+  .pdv-carrinho {
+    position: static;
+    top: auto;
+    max-height: none;
+    min-height: 0;
+  }
+
+  /* Carrinho vazio: centraliza no painel em vez de colar no topo. */
+  .pdv-carrinho-vazio {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* Barra de dicas de atalhos do PDV (fica dentro da faixa de topo) */
 .pdv-atalhos {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 1.1rem;
+  gap: 0.3rem 0.9rem;
   align-items: center;
-  margin-bottom: 1.25rem;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
 }
 
@@ -4559,6 +4713,37 @@ kbd {
 
   .pdv-item-preco-linha {
     margin-bottom: 0.35rem;
+  }
+
+  /* O fechamento é fixo no rodapé, então em tela baixa ele é o principal
+     concorrente da lista de itens: aperta as folgas e o tamanho do total. */
+  .pdv-carrinho-head {
+    margin-bottom: 0.6rem;
+  }
+
+  .pdv-fechamento {
+    max-height: 64%;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+  }
+
+  .pdv-totais {
+    margin-top: 0.6rem;
+    gap: 0.35rem;
+  }
+
+  .pdv-total strong {
+    font-size: 1.5rem;
+  }
+
+  .pdv-troco {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+  }
+
+  .pdv-finalizar {
+    margin-top: 0.6rem;
+    padding: 0.8rem 1rem;
   }
 }
 

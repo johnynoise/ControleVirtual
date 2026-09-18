@@ -154,7 +154,7 @@ export default function DashboardPage() {
         lista.push({
           chave: "fiado",
           tom: "aviso",
-          titulo: `${brl(fiadoTotal)} em fiado a receber`,
+          titulo: `${brl(fiadoTotal)} em vendas a prazo a receber`,
           sub: `${contas.length} ${
             contas.length === 1 ? "cliente devendo" : "clientes devendo"
           }`,

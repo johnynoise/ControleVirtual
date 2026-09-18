@@ -14,7 +14,7 @@ const PAGINAS: { rotulo: string; to: string; palavras?: string }[] = [
   { rotulo: "Estoque", to: "/movimentacoes", palavras: "movimentacoes entrada saida ajuste" },
   { rotulo: "Fornecedores", to: "/fornecedores", palavras: "compras" },
   { rotulo: "Clientes", to: "/clientes", palavras: "" },
-  { rotulo: "Fiado (contas a receber)", to: "/contas-a-receber", palavras: "devedor divida a prazo" },
+  { rotulo: "A prazo (contas a receber)", to: "/contas-a-receber", palavras: "devedor divida fiado a prazo" },
   { rotulo: "Categorias", to: "/categorias", palavras: "" },
   { rotulo: "Relatórios", to: "/relatorios", palavras: "curva abc kardex giro ranking" },
 ];

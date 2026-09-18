@@ -256,6 +256,7 @@ _FORMAS_PAGAMENTO = {
     "cartao_credito": "Cartão de crédito",
     "cartao_debito": "Cartão de débito",
     "pix": "Pix",
+    "fiado": "A prazo",
     "outro": "Outro",
 }
 

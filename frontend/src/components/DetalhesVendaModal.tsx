@@ -47,7 +47,7 @@ export default function DetalhesVendaModal({
           )}
           {venda.a_prazo && (
             <span className={`chip ${venda.quitada ? "quitado" : "fiado"}`}>
-              {venda.quitada ? "Fiado quitado" : "Fiado em aberto"}
+              {venda.quitada ? "A prazo quitado" : "A prazo em aberto"}
             </span>
           )}
           {defeitosPendentes.length > 0 && (
@@ -120,7 +120,7 @@ export default function DetalhesVendaModal({
 
           {venda.a_prazo && (
             <div className="detalhes-linha">
-              <dt>Fiado</dt>
+              <dt>A prazo</dt>
               <dd>
                 Pago {brl(venda.total_pago)} de {brl(venda.total_liquido)}
                 {venda.quitada ? (

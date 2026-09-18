@@ -160,7 +160,7 @@ export default function ContasReceberPage() {
           </span>
           <div>
             <h1>Contas a receber</h1>
-            <p className="pdv-sub">Saldos de vendas no fiado, por cliente.</p>
+            <p className="pdv-sub">Saldos de vendas a prazo, por cliente.</p>
           </div>
         </div>
       </div>
@@ -251,7 +251,7 @@ export default function ContasReceberPage() {
           <EstadoVazio
             tom="sucesso"
             titulo="Tudo em dia!"
-            descricao="Nenhum cliente com saldo em aberto. As vendas no fiado aparecem aqui até serem quitadas."
+            descricao="Nenhum cliente com saldo em aberto. As vendas a prazo aparecem aqui até serem quitadas."
           />
         ) : filtradas.length === 0 ? (
           <EstadoVazio
@@ -273,7 +273,7 @@ export default function ContasReceberPage() {
               <tr>
                 <th>Cliente</th>
                 <th className="num">Vendas em aberto</th>
-                <th>Fiado mais antigo</th>
+                <th>Venda a prazo mais antiga</th>
                 <th className="num">Saldo devedor</th>
                 <th></th>
               </tr>
@@ -367,7 +367,7 @@ export default function ContasReceberPage() {
                           ) : erroDetalhe ? (
                             <p className="alert erro">{erroDetalhe}</p>
                           ) : !vendas || vendas.length === 0 ? (
-                            <p className="vazio">Nenhuma compra fiado.</p>
+                            <p className="vazio">Nenhuma compra a prazo.</p>
                           ) : (
                             <div className="fiado-compras">
                               {vendas.map((v) => {

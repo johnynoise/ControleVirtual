@@ -20,7 +20,7 @@ PAGAMENTO_LABEL: dict[str, str] = {
     "pix": "PIX",
     "cartao_credito": "Cartao de credito",
     "cartao_debito": "Cartao de debito",
-    "fiado": "Fiado (a prazo)",
+    "fiado": "A prazo",
     "outro": "Outro",
 }
 

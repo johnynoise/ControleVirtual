@@ -585,7 +585,7 @@ export default function ProdutosPage() {
 
             <div className="grid-2">
               <label>
-                Preço a prazo (fiado)
+                Preço a prazo
                 <input
                   type="text"
                   inputMode="decimal"
@@ -594,7 +594,7 @@ export default function ProdutosPage() {
                   placeholder={`Opcional — sem isso usa R$ ${form.preco_venda}`}
                 />
                 <small className="muted">
-                  Usado quando a venda é no fiado. Deixe vazio para cobrar o
+                  Usado quando a venda é a prazo. Deixe vazio para cobrar o
                   mesmo preço à vista.
                 </small>
               </label>

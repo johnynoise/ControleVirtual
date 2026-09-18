@@ -119,7 +119,7 @@ const GRUPOS: GrupoRelatorio[] = [
         to: "/relatorios/forma-pagamento",
         chave: "forma-pagamento",
         titulo: "Formas de pagamento",
-        descricao: "Mix de faturamento por dinheiro, cartão, pix, fiado e outros.",
+        descricao: "Mix de faturamento por dinheiro, cartão, pix, a prazo e outros.",
         disponivel: true,
       },
       {

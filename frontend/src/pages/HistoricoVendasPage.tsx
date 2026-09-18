@@ -20,7 +20,7 @@ type FiltroStatus = "todas" | "fiado" | "delivery" | "estornadas";
 
 const FILTROS: { valor: FiltroStatus; rotulo: string }[] = [
   { valor: "todas", rotulo: "Todas" },
-  { valor: "fiado", rotulo: "Fiado" },
+  { valor: "fiado", rotulo: "A prazo" },
   { valor: "delivery", rotulo: "Delivery" },
   { valor: "estornadas", rotulo: "Estornadas" },
 ];
