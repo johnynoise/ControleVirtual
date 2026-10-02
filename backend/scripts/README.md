@@ -47,6 +47,21 @@ Outros comandos disponíveis:
 .\remover-servico.ps1    # desinstala o serviço (não apaga dados nem o projeto)
 ```
 
+## Atualizando para a versão mais recente
+
+Depois que o repositório mudar (push feito a partir de outro computador),
+rode neste computador, na pasta `backend\scripts`:
+
+```powershell
+.\atualizar-servico.ps1
+```
+
+Esse script faz `git pull`, reinstala dependências do backend e do frontend
+(só reinstala de fato o que mudou — `pip install` e `npm install` não repetem
+trabalho desnecessário), gera o build novo do frontend e reinicia o serviço.
+Precisa já ter o serviço instalado nesta pasta (se não tiver, ou se você
+trocou de pasta/repositório, use `renovar-servico.ps1` abaixo).
+
 ## Trocando de pasta/repositório no mesmo computador
 
 Se este computador já teve o serviço instalado apontando para outra cópia do
