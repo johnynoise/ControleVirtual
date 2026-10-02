@@ -8,6 +8,7 @@ permanecerem corretos mesmo que preços mudem depois.
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -48,6 +49,23 @@ class Venda(Base):
     # contar nos relatórios e o estoque dos itens já foi devolvido.
     cancelada_em = Column(DateTime(timezone=True), nullable=True, index=True)
     motivo_cancelamento = Column(String(200), nullable=True)
+
+    # Renegociação de dívida: quando um cliente tem várias vendas a prazo em
+    # aberto, o vendedor pode consolidá-las em uma nova venda "fiado" com um
+    # novo parcelamento. As vendas antigas não são estornadas (o estoque já
+    # foi vendido de fato) — apenas marcadas como renegociadas, para saírem do
+    # saldo devedor e apontarem para a venda consolidada que assumiu a dívida.
+    renegociada_em = Column(DateTime(timezone=True), nullable=True, index=True)
+    renegociada_para_venda_id = Column(
+        Integer, ForeignKey("vendas.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Marca a venda consolidada criada pela própria renegociação (o "destino"
+    # da dívida). Ela não representa mercadoria vendida agora — é só o novo
+    # acordo de pagamento — então fica de fora de faturamento/lucro/CMV nos
+    # relatórios, para não contar de novo um dinheiro cujo lucro já foi
+    # contabilizado nas vendas originais. Continua valendo normalmente para
+    # saldo devedor e contas a receber.
+    eh_renegociacao = Column(Boolean, nullable=False, default=False, server_default="0")
 
     # Entrega (delivery). Quando `entrega_status` é "pendente", a venda é um
     # pedido ainda não realizado: NÃO baixou estoque nem gerou movimentação e
@@ -97,6 +115,15 @@ class Venda(Base):
     )
     cliente = relationship("Cliente")
 
+    # Vendas antigas que foram consolidadas nesta (quando esta é o resultado de
+    # uma renegociação de dívida). Ver `renegociada_para_venda_id`.
+    vendas_renegociadas = relationship(
+        "Venda",
+        backref="renegociada_para",
+        remote_side=[id],
+        foreign_keys="Venda.renegociada_para_venda_id",
+    )
+
 
 class ItemVenda(Base):
     __tablename__ = "itens_venda"
@@ -113,6 +140,10 @@ class ItemVenda(Base):
     quantidade = Column(Integer, nullable=False)
     preco_unitario = Column(Numeric(12, 2), nullable=False)
     custo_unitario = Column(Numeric(12, 2), nullable=False, default=0)
+    # Desconto em reais aplicado sobre a linha inteira do item (preço unitário
+    # × quantidade), independente do desconto total da venda. `subtotal` já
+    # sai líquido deste desconto: subtotal = (preco_unitario * quantidade) - desconto.
+    desconto = Column(Numeric(12, 2), nullable=False, default=0)
     subtotal = Column(Numeric(12, 2), nullable=False)
 
     venda = relationship("Venda", back_populates="itens")

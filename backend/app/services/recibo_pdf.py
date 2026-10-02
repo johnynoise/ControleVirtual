@@ -132,10 +132,13 @@ def gerar_recibo_pdf(
         pdf.cell(CONTEUDO_MM - 22, 5, _latin1(nome), align="L")
         pdf.cell(22, 5, _latin1(_brl(it.subtotal)), align="R")
         pdf.ln(4.5)
-        # Linha 2: preço unitário (menor, cinza)
+        # Linha 2: preço unitário (menor, cinza), com o desconto do item se houver.
         pdf.set_font("Helvetica", "", 7)
         pdf.set_text_color(120, 120, 120)
-        pdf.cell(CONTEUDO_MM, 4, _latin1(f"{_brl(it.preco_unitario)} un."), align="L")
+        detalhe_unit = f"{_brl(it.preco_unitario)} un."
+        if Decimal(str(it.desconto)) > 0:
+            detalhe_unit += f" - desconto {_brl(it.desconto)}"
+        pdf.cell(CONTEUDO_MM, 4, _latin1(detalhe_unit), align="L")
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", "", 9)
         pdf.ln(4.5)

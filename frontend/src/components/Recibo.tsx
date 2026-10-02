@@ -53,7 +53,12 @@ export default function Recibo({
             <tr key={it.id}>
               <td>
                 {it.quantidade}x {it.produto_nome}
-                <div className="recibo-unit">{brl(it.preco_unitario)} un.</div>
+                <div className="recibo-unit">
+                  {brl(it.preco_unitario)} un.
+                  {parseFloat(it.desconto) > 0 && (
+                    <> · desconto {brl(it.desconto)}</>
+                  )}
+                </div>
               </td>
               <td className="r">{brl(it.subtotal)}</td>
             </tr>

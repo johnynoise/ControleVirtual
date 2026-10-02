@@ -68,7 +68,13 @@ def ficha(db: Session, cliente_id: int) -> dict | None:
     # Pedidos de delivery ainda pendentes não são vendas realizadas: ficam de
     # fora das métricas e do histórico de compras da ficha.
     vendas = [v for v in vendas if v.entrega_status != "pendente"]
-    validas = [v for v in vendas if v.cancelada_em is None]
+    # Vendas originais que foram renegociadas continuam contando normalmente
+    # (a mercadoria foi vendida de fato); só a venda consolidada criada pela
+    # renegociação (`eh_renegociacao`) fica de fora, para não contar de novo
+    # um dinheiro cujo faturamento/itens já vieram das vendas originais.
+    validas = [
+        v for v in vendas if v.cancelada_em is None and not v.eh_renegociacao
+    ]
 
     total_gasto = sum((v.total_liquido or 0) for v in validas)
     num_compras = len(validas)
@@ -115,7 +121,10 @@ def ficha(db: Session, cliente_id: int) -> dict | None:
     for v in vendas:
         a_prazo = v.forma_pagamento == "fiado"
         total_pago = sum((Decimal(p.valor) for p in v.pagamentos), Decimal("0"))
-        if a_prazo and v.cancelada_em is None:
+        # Renegociada: a dívida foi transferida para a venda consolidada, que
+        # já entra no saldo devedor por si só. Sem isso, o saldo apareceria em
+        # dobro (na venda antiga e na nova).
+        if a_prazo and v.cancelada_em is None and v.renegociada_em is None:
             saldo = (Decimal(v.total_liquido or 0) - total_pago).quantize(_CENTAVOS)
             saldo = saldo if saldo > 0 else Decimal("0.00")
         else:
@@ -133,6 +142,7 @@ def ficha(db: Session, cliente_id: int) -> dict | None:
                 "a_prazo": a_prazo,
                 "total_pago": _q(total_pago),
                 "saldo_devedor": saldo,
+                "renegociada": v.renegociada_em is not None,
             }
         )
 

@@ -49,12 +49,14 @@ export default function ClienteFichaPage() {
     }
   }
 
-  // Gastos agregados por mês (só compras não estornadas), últimos 12 meses.
+  // Gastos agregados por mês (só compras válidas: não estornadas nem
+  // renegociadas — a renegociada já teve a dívida contada na venda nova),
+  // últimos 12 meses.
   const gastosPorMes = useMemo(() => {
     if (!ficha) return [] as { rotulo: string; valor: number }[];
     const mapa = new Map<string, number>();
     ficha.compras
-      .filter((c) => !c.estornada)
+      .filter((c) => !c.estornada && !c.renegociada)
       .forEach((c) => {
         const d = new Date(c.criado_em);
         if (Number.isNaN(d.getTime())) return;
@@ -214,9 +216,9 @@ export default function ClienteFichaPage() {
                 <tbody>
                   {ficha.compras.map((c) => {
                     const saldo = parseFloat(c.saldo_devedor) || 0;
-                    const fiadoAberto = c.a_prazo && !c.estornada && saldo > 0;
+                    const fiadoAberto = c.a_prazo && !c.estornada && !c.renegociada && saldo > 0;
                     return (
-                      <tr key={c.id} className={c.estornada ? "inativo" : undefined}>
+                      <tr key={c.id} className={c.estornada || c.renegociada ? "inativo" : undefined}>
                         <td className="muted">{dataHora(c.criado_em)}</td>
                         <td className="muted">
                           {c.forma_pagamento === "fiado" ? "A prazo" : c.forma_pagamento ?? "—"}
@@ -226,6 +228,10 @@ export default function ClienteFichaPage() {
                         <td>
                           {c.estornada ? (
                             <span className="chip mov-saida">Estornada</span>
+                          ) : c.renegociada ? (
+                            <span className="chip mov-ajuste" title="Dívida transferida para uma renegociação">
+                              Renegociada
+                            </span>
                           ) : fiadoAberto ? (
                             <span className="chip fiado" title={`Falta ${brl(saldo)}`}>
                               A prazo · falta {brl(saldo)}

@@ -7,7 +7,7 @@
 import type { Parcela, Venda } from "../types";
 import { brl, dataBR } from "./ui";
 
-export type StatusParcela = "paga" | "parcial" | "aberta";
+export type StatusParcela = "paga" | "parcial" | "aberta" | "renegociada";
 
 export interface ParcelaInfo extends Parcela {
   valorNum: number;
@@ -50,9 +50,19 @@ function dataQuitacao(venda: Venda, alvo: number): string | null {
   return null;
 }
 
-/** Situação de cada parcela da venda (ordenadas por número). */
+/**
+ * Situação de cada parcela da venda (ordenadas por número).
+ *
+ * Numa venda renegociada, o saldo não pago foi transferido para a venda
+ * consolidada — não foi recebido em dinheiro. As parcelas que já tinham sido
+ * efetivamente pagas antes da renegociação continuam "paga"; as que não
+ * foram (parcial ou totalmente em aberto) viram "renegociada" em vez de
+ * "aberta"/"vencida", para não parecerem dívida solta nem pagamento que não
+ * ocorreu.
+ */
 export function statusParcelas(venda: Venda): ParcelaInfo[] {
   const pago = parseFloat(venda.total_pago) || 0;
+  const renegociada = venda.renegociada_em != null;
   let acumulado = 0;
   return [...venda.parcelas]
     .sort((a, b) => a.numero - b.numero)
@@ -68,6 +78,9 @@ export function statusParcelas(venda: Venda): ParcelaInfo[] {
         status = "paga";
         restante = 0;
         pagoEm = dataQuitacao(venda, fim);
+      } else if (renegociada) {
+        status = "renegociada";
+        restante = pago > inicio + 0.005 ? fim - pago : valorNum;
       } else if (pago > inicio + 0.005) {
         status = "parcial";
         restante = fim - pago;
@@ -75,7 +88,8 @@ export function statusParcelas(venda: Venda): ParcelaInfo[] {
         status = "aberta";
         restante = valorNum;
       }
-      const diasAtraso = status === "paga" ? 0 : diasAtrasoDe(p.vencimento);
+      const diasAtraso =
+        status === "paga" || status === "renegociada" ? 0 : diasAtrasoDe(p.vencimento);
       const vencida = diasAtraso > 0;
       return { ...p, valorNum, status, restante, pagoEm, vencida, diasAtraso };
     });

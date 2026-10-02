@@ -22,6 +22,7 @@ from app.schemas.venda import (
     DevolucaoRequest,
     FormaPagamento,
     PagamentoCreate,
+    RenegociacaoRequest,
     StatusFornecedor,
     VendaCreate,
 )
@@ -73,7 +74,6 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
         cliente_id=cliente_id,
         cliente_nome=cliente_nome,
         forma_pagamento=dados.forma_pagamento.value if dados.forma_pagamento else None,
-        desconto=dados.desconto,
         observacao=dados.observacao,
         entrega_status="pendente" if pendente_entrega else None,
         endereco_entrega=(dados.endereco_entrega or "").strip() or None
@@ -83,6 +83,7 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
 
     total_bruto = Decimal("0")
     custo_total = Decimal("0")
+    desconto_itens = Decimal("0")
 
     for item in dados.itens:
         produto = db.get(Produto, item.produto_id)
@@ -105,9 +106,22 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
         preco = item.preco_unitario if item.preco_unitario is not None else preco_tabela
         preco = Decimal(preco)
         custo = Decimal(produto.preco_custo or 0)
-        subtotal = (preco * item.quantidade).quantize(Decimal("0.01"))
+        bruto_item = (preco * item.quantidade).quantize(Decimal("0.01"))
 
-        total_bruto += subtotal
+        desconto_item = Decimal(item.desconto or 0).quantize(Decimal("0.01"))
+        if desconto_item > bruto_item:
+            raise ErroVenda(
+                f"O desconto de '{produto.nome}' não pode ser maior que o "
+                f"valor da linha ({bruto_item})."
+            )
+        subtotal = (bruto_item - desconto_item).quantize(Decimal("0.01"))
+
+        # `total_bruto` da venda é a soma dos valores brutos (sem nenhum
+        # desconto) dos itens; o desconto por item é contabilizado à parte e
+        # somado ao desconto total no fechamento, junto com o desconto de
+        # cabeçalho.
+        total_bruto += bruto_item
+        desconto_itens += desconto_item
         custo_total += (custo * item.quantidade).quantize(Decimal("0.01"))
 
         # Item da venda (snapshots). Sempre registrado.
@@ -118,6 +132,7 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
                 quantidade=item.quantidade,
                 preco_unitario=preco,
                 custo_unitario=custo,
+                desconto=desconto_item,
                 subtotal=subtotal,
             )
         )
@@ -138,14 +153,21 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
                 )
             )
 
-    desconto = Decimal(dados.desconto or 0)
-    if desconto > total_bruto:
+    # Desconto de cabeçalho (aplicado sobre o total, além do que já foi
+    # descontado item a item). `venda.desconto` guarda o valor consolidado
+    # (cabeçalho + itens) para os relatórios de desconto continuarem
+    # funcionando sem precisar somar as duas fontes separadamente.
+    desconto_cabecalho = Decimal(dados.desconto or 0)
+    total_apos_itens = (total_bruto - desconto_itens).quantize(Decimal("0.01"))
+    if desconto_cabecalho > total_apos_itens:
         raise ErroVenda("O desconto não pode ser maior que o total da venda.")
 
-    total_liquido = (total_bruto - desconto).quantize(Decimal("0.01"))
+    desconto_total = (desconto_itens + desconto_cabecalho).quantize(Decimal("0.01"))
+    total_liquido = (total_bruto - desconto_total).quantize(Decimal("0.01"))
     lucro = (total_liquido - custo_total).quantize(Decimal("0.01"))
 
     venda.total_bruto = total_bruto.quantize(Decimal("0.01"))
+    venda.desconto = desconto_total
     venda.custo_total = custo_total.quantize(Decimal("0.01"))
     venda.total_liquido = total_liquido
     venda.lucro = lucro
@@ -157,8 +179,8 @@ def criar(db: Session, dados: VendaCreate) -> Venda:
             raise ErroVenda(
                 "Parcelamento só é permitido em vendas a prazo."
             )
-        if len(dados.parcelas) > 3:
-            raise ErroVenda("O parcelamento permite no máximo 3 parcelas.")
+        if len(dados.parcelas) > 5:
+            raise ErroVenda("O parcelamento permite no máximo 5 parcelas.")
 
         numeros = sorted(p.numero for p in dados.parcelas)
         if numeros != list(range(1, len(dados.parcelas) + 1)):
@@ -367,12 +389,31 @@ def devolver(db: Session, venda_id: int, dados: DevolucaoRequest) -> Venda | Non
 
         preco = Decimal(item.preco_unitario)
         custo = Decimal(item.custo_unitario)
-        subtotal_devolvido = (preco * qtd).quantize(Decimal("0.01"))
+        qtd_original = item.quantidade
+        desconto_original = Decimal(item.desconto or 0)
+
+        # O desconto do item é um valor fixo por linha (não por unidade); ao
+        # devolver parte da quantidade, rateia o desconto proporcionalmente
+        # entre a parte devolvida e a que resta, para o valor devolvido e o
+        # subtotal restante ficarem líquidos de desconto de forma consistente.
+        desconto_devolvido = (
+            (desconto_original * qtd / qtd_original).quantize(Decimal("0.01"))
+            if qtd_original > 0
+            else Decimal("0.00")
+        )
+        subtotal_devolvido = (preco * qtd - desconto_devolvido).quantize(
+            Decimal("0.01")
+        )
         valor_devolvido += subtotal_devolvido
 
-        # Reduz o item da venda e recalcula o subtotal restante.
+        # Reduz o item da venda e recalcula o desconto/subtotal restante.
         item.quantidade -= qtd
-        item.subtotal = (preco * item.quantidade).quantize(Decimal("0.01"))
+        item.desconto = (desconto_original - desconto_devolvido).quantize(
+            Decimal("0.01")
+        )
+        item.subtotal = (preco * item.quantidade - item.desconto).quantize(
+            Decimal("0.01")
+        )
 
         # Devolve o estoque, se o produto ainda existir.
         if item.produto_id is not None:
@@ -449,13 +490,35 @@ def _total_pago(venda: Venda) -> Decimal:
 
 
 def _saldo_devedor(venda: Venda) -> Decimal:
-    """Saldo em aberto da venda a prazo. Zero se não for fiado ou já estornada."""
+    """Saldo em aberto da venda a prazo.
+
+    Zero se não for fiado, já estornada, ou já renegociada (a dívida foi
+    transferida para a venda consolidada que assumiu o saldo).
+    """
     if venda.forma_pagamento != FormaPagamento.fiado.value:
         return Decimal("0.00")
     if venda.cancelada_em is not None:
         return Decimal("0.00")
+    if venda.renegociada_em is not None:
+        return Decimal("0.00")
     saldo = (Decimal(venda.total_liquido or 0) - _total_pago(venda)).quantize(_CENTAVOS)
     return saldo if saldo > 0 else Decimal("0.00")
+
+
+def _lucro_proporcional(venda: Venda, valor: Decimal) -> Decimal:
+    """Fração do lucro da venda correspondente a `valor` do total líquido.
+
+    A margem é a mesma para toda a venda (lucro / total_liquido), então o
+    lucro embutido em qualquer parte ainda não recebida (uma parcela, ou o
+    saldo devedor todo) é essa fração aplicada ao valor em questão. Vendas
+    sem total líquido positivo (ex. renegociação, sem itens) não têm lucro
+    a ratear.
+    """
+    total = Decimal(venda.total_liquido or 0)
+    if total <= 0:
+        return Decimal("0.00")
+    lucro = Decimal(venda.lucro or 0)
+    return (lucro * valor / total).quantize(_CENTAVOS)
 
 
 def _parcelas_vencidas(venda: Venda, hoje: date | None = None) -> tuple[int, Decimal]:
@@ -554,7 +617,11 @@ def fiado_por_cliente(
         .all()
     )
     if apenas_abertas:
-        return [v for v in vendas if _saldo_devedor(v) > 0]
+        # Renegociadas nunca têm saldo (já é filtrado por _saldo_devedor), mas
+        # ficam de fora daqui também para não aparecerem como "em aberto".
+        return [
+            v for v in vendas if v.renegociada_em is None and _saldo_devedor(v) > 0
+        ]
     return vendas
 
 
@@ -570,6 +637,7 @@ def contas_a_receber(db: Session) -> list[dict]:
         .filter(
             Venda.forma_pagamento == FormaPagamento.fiado.value,
             Venda.cancelada_em.is_(None),
+            Venda.renegociada_em.is_(None),
             func.coalesce(Venda.entrega_status, "") != "pendente",
         )
         .order_by(Venda.criado_em.asc())
@@ -591,6 +659,7 @@ def contas_a_receber(db: Session) -> list[dict]:
                 "cliente_telefone": venda.cliente.telefone if venda.cliente else None,
                 "num_vendas": 0,
                 "total_devido": Decimal("0.00"),
+                "lucro_devido": Decimal("0.00"),
                 "venda_mais_antiga": venda.criado_em,
                 "parcelas_vencidas": 0,
                 "valor_vencido": Decimal("0.00"),
@@ -598,6 +667,9 @@ def contas_a_receber(db: Session) -> list[dict]:
             agrupado[chave] = linha
         linha["num_vendas"] += 1
         linha["total_devido"] = (linha["total_devido"] + saldo).quantize(_CENTAVOS)
+        linha["lucro_devido"] = (
+            linha["lucro_devido"] + _lucro_proporcional(venda, saldo)
+        ).quantize(_CENTAVOS)
         if venda.criado_em < linha["venda_mais_antiga"]:
             linha["venda_mais_antiga"] = venda.criado_em
 
@@ -611,3 +683,186 @@ def contas_a_receber(db: Session) -> list[dict]:
     return sorted(
         agrupado.values(), key=lambda l: l["total_devido"], reverse=True
     )
+
+
+def _parcelas_em_aberto_da_venda(venda: Venda) -> list[dict]:
+    """Detalha cada parcela ainda não totalmente paga de uma venda a prazo.
+
+    Mesma lógica de varredura de ``_parcelas_vencidas``, mas devolvendo uma
+    linha por parcela em aberto (parcial ou integralmente), com o valor que
+    ainda falta receber dela e sua situação. Usado para a visão de calendário
+    de recebimentos, onde cada parcela conta para o dia do seu vencimento.
+    """
+    if not venda.parcelas:
+        return []
+
+    hoje = date.today()
+    pago = _total_pago(venda)
+    acumulado = Decimal("0")
+    linhas: list[dict] = []
+    for p in sorted(venda.parcelas, key=lambda x: x.numero):
+        valor = Decimal(p.valor)
+        inicio = acumulado
+        acumulado += valor
+        fim = acumulado
+        if pago >= fim - _CENTAVOS:
+            continue  # parcela já quitada
+        restante = (fim - pago).quantize(_CENTAVOS) if pago > inicio else valor
+        if restante <= 0:
+            continue
+        vencida = p.vencimento is not None and p.vencimento < hoje
+        linhas.append(
+            {
+                "parcela_id": p.id,
+                "venda_id": venda.id,
+                "numero": p.numero,
+                "vencimento": p.vencimento,
+                "valor_parcela": valor.quantize(_CENTAVOS),
+                "valor_restante": restante,
+                "lucro_restante": _lucro_proporcional(venda, restante),
+                "vencida": vencida,
+                "dias_atraso": (hoje - p.vencimento).days if vencida else 0,
+            }
+        )
+    return linhas
+
+
+def parcelas_a_receber(db: Session) -> list[dict]:
+    """Lista, uma a uma, as parcelas em aberto de todas as vendas a prazo.
+
+    Diferente de ``contas_a_receber`` (que agrega por cliente), aqui cada linha
+    é uma parcela pendente com sua data de vencimento e o cliente dono dela —
+    a granularidade que alimenta o calendário de recebimentos e os filtros por
+    período (hoje, atrasadas, próximos dias).
+    """
+    vendas = (
+        db.query(Venda)
+        .filter(
+            Venda.forma_pagamento == FormaPagamento.fiado.value,
+            Venda.cancelada_em.is_(None),
+            Venda.renegociada_em.is_(None),
+            func.coalesce(Venda.entrega_status, "") != "pendente",
+        )
+        .order_by(Venda.criado_em.asc())
+        .all()
+    )
+
+    resultado: list[dict] = []
+    for venda in vendas:
+        for linha in _parcelas_em_aberto_da_venda(venda):
+            resultado.append(
+                {
+                    **linha,
+                    "cliente_id": venda.cliente_id,
+                    "cliente_nome": venda.cliente_nome or "Sem cliente",
+                    "cliente_telefone": venda.cliente.telefone
+                    if venda.cliente
+                    else None,
+                }
+            )
+
+    # Vencimento mais próximo (ou mais atrasado) primeiro.
+    resultado.sort(key=lambda l: (l["vencimento"] is None, l["vencimento"]))
+    return resultado
+
+
+def renegociar(
+    db: Session, cliente_id: int, dados: RenegociacaoRequest
+) -> tuple[Venda, list[Venda]]:
+    """Renegocia a dívida em aberto de um cliente.
+
+    Soma o saldo devedor de todas as vendas a prazo em aberto do cliente e
+    cria uma nova venda "fiado" consolidada com o novo plano de parcelas
+    informado. As vendas antigas não são estornadas (o estoque já foi vendido
+    de fato) — apenas marcadas como renegociadas (``renegociada_em`` +
+    ``renegociada_para_venda_id``), o que zera o saldo devedor delas e as tira
+    das contas a receber. O histórico de itens e pagamentos de cada venda
+    antiga é preservado para auditoria.
+
+    Retorna a nova venda consolidada e a lista das vendas antigas envolvidas.
+    """
+    cliente = db.get(Cliente, cliente_id)
+    if cliente is None:
+        raise ErroVenda("Cliente informado não existe.")
+
+    vendas_abertas = fiado_por_cliente(db, cliente_id, apenas_abertas=True)
+    if not vendas_abertas:
+        raise ErroVenda("Este cliente não tem dívida em aberto para renegociar.")
+
+    total_divida = sum((_saldo_devedor(v) for v in vendas_abertas), Decimal("0")).quantize(
+        _CENTAVOS
+    )
+    if total_divida <= 0:
+        raise ErroVenda("Este cliente não tem dívida em aberto para renegociar.")
+
+    if not dados.parcelas:
+        raise ErroVenda("Informe ao menos uma parcela para o novo acordo.")
+    if len(dados.parcelas) > 5:
+        raise ErroVenda("O parcelamento permite no máximo 5 parcelas.")
+
+    numeros = sorted(p.numero for p in dados.parcelas)
+    if numeros != list(range(1, len(dados.parcelas) + 1)):
+        raise ErroVenda("As parcelas devem ser numeradas em sequência a partir de 1.")
+
+    soma_parcelas = sum(
+        (Decimal(p.valor) for p in dados.parcelas), Decimal("0")
+    ).quantize(_CENTAVOS)
+    # Tolera diferença de centavos por causa do arredondamento na divisão.
+    if abs(soma_parcelas - total_divida) > Decimal("0.02"):
+        raise ErroVenda(
+            f"A soma das parcelas ({soma_parcelas}) deve ser igual ao total "
+            f"da dívida renegociada ({total_divida})."
+        )
+
+    numeros_vendas = ", ".join(f"#{v.id}" for v in vendas_abertas)
+    observacao = (
+        f"Renegociação da dívida das vendas {numeros_vendas} "
+        f"(total {total_divida})."
+    )
+    if dados.observacao:
+        observacao += f" {dados.observacao.strip()}"
+
+    # A venda consolidada não tem itens de produto reais (nada foi vendido
+    # agora); é um registro financeiro que representa o novo acordo de
+    # pagamento. Usa o total da dívida como total bruto/líquido, sem custo
+    # nem lucro (já contabilizados nas vendas originais).
+    venda_nova = Venda(
+        cliente_id=cliente.id,
+        cliente_nome=cliente.nome,
+        forma_pagamento=FormaPagamento.fiado.value,
+        total_bruto=total_divida,
+        desconto=Decimal("0.00"),
+        total_liquido=total_divida,
+        custo_total=Decimal("0.00"),
+        lucro=Decimal("0.00"),
+        observacao=observacao,
+        # Marca explicitamente como o registro financeiro da renegociação (não
+        # uma venda de mercadoria nova), para os relatórios de faturamento não
+        # contarem essa dívida de novo — o lucro dela já está nas vendas
+        # antigas, que continuam contando normalmente no dia em que ocorreram.
+        eh_renegociacao=True,
+    )
+
+    for p in sorted(dados.parcelas, key=lambda x: x.numero):
+        venda_nova.parcelas.append(
+            ParcelaVenda(
+                numero=p.numero,
+                valor=Decimal(p.valor).quantize(_CENTAVOS),
+                vencimento=p.vencimento,
+            )
+        )
+
+    db.add(venda_nova)
+    db.flush()  # garante venda_nova.id para vincular as vendas antigas
+
+    agora = datetime.now()
+    for v in vendas_abertas:
+        v.renegociada_em = agora
+        v.renegociada_para_venda_id = venda_nova.id
+        db.add(v)
+
+    db.commit()
+    db.refresh(venda_nova)
+    for v in vendas_abertas:
+        db.refresh(v)
+    return venda_nova, vendas_abertas

@@ -1,8 +1,8 @@
 """Model de Parcela de Venda (plano de parcelamento de vendas a prazo/fiado).
 
-Quando uma venda é feita "a prazo" (fiado), ela pode ser dividida em até 3
-parcelas. Cada parcela guarda o número (1, 2, 3), o valor previsto e a data de
-vencimento combinada com o cliente. As parcelas são apenas o *plano* de
+Quando uma venda é feita "a prazo" (fiado), ela pode ser dividida em até 5
+parcelas. Cada parcela guarda o número (1, 2, 3...), o valor previsto e a data
+de vencimento combinada com o cliente. As parcelas são apenas o *plano* de
 pagamento; o recebimento efetivo continua registrado em ``PagamentoVenda`` e o
 saldo devedor da venda continua sendo o total líquido menos a soma dos
 pagamentos.

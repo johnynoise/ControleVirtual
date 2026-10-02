@@ -33,6 +33,10 @@ class ItemVendaCreate(BaseModel):
     quantidade: int = Field(..., gt=0)
     # Se não informado, usa o preço de venda atual do produto.
     preco_unitario: Decimal | None = Field(default=None, ge=0)
+    # Desconto em reais sobre a linha inteira do item (preço × quantidade),
+    # independente do desconto total da venda. Não pode passar do valor bruto
+    # da linha (validado no crud, onde o preço final é conhecido).
+    desconto: Decimal = Field(default=Decimal("0"), ge=0)
 
 
 class ItemVendaOut(BaseModel):
@@ -44,13 +48,14 @@ class ItemVendaOut(BaseModel):
     quantidade: int
     preco_unitario: Decimal
     custo_unitario: Decimal
+    desconto: Decimal = Decimal("0")
     subtotal: Decimal
 
     @computed_field
     @property
     def lucro(self) -> Decimal:
-        """Lucro do item: (preço - custo) * quantidade."""
-        return (self.preco_unitario - self.custo_unitario) * self.quantidade
+        """Lucro do item: subtotal (já líquido do desconto do item) - custo."""
+        return self.subtotal - (self.custo_unitario * self.quantidade)
 
 
 # --------------------------------------------------------------------------- #
@@ -59,7 +64,7 @@ class ItemVendaOut(BaseModel):
 class ParcelaCreate(BaseModel):
     """Uma parcela do plano de parcelamento de uma venda a prazo (fiado)."""
 
-    numero: int = Field(..., ge=1, le=3)
+    numero: int = Field(..., ge=1, le=5)
     valor: Decimal = Field(..., gt=0)
     vencimento: date
 
@@ -71,9 +76,9 @@ class VendaCreate(BaseModel):
     desconto: Decimal = Field(default=Decimal("0"), ge=0)
     observacao: str | None = None
     itens: list[ItemVendaCreate] = Field(..., min_length=1)
-    # Plano de parcelamento (apenas para vendas a prazo/fiado). Máximo de 3
+    # Plano de parcelamento (apenas para vendas a prazo/fiado). Máximo de 5
     # parcelas. Se omitido em uma venda fiada, assume pagamento em parcela única.
-    parcelas: list[ParcelaCreate] = Field(default_factory=list, max_length=3)
+    parcelas: list[ParcelaCreate] = Field(default_factory=list, max_length=5)
     # Delivery: quando True, a venda entra como pedido pendente de entrega (não
     # baixa estoque nem conta em relatórios até a entrega ser confirmada).
     entrega: bool = False
@@ -84,6 +89,29 @@ class EstornoRequest(BaseModel):
     """Corpo opcional do estorno, com o motivo do cancelamento."""
 
     motivo: str | None = Field(default=None, max_length=200)
+
+
+# --------------------------------------------------------------------------- #
+# Renegociação de dívida (consolida vendas a prazo em aberto de um cliente)
+# --------------------------------------------------------------------------- #
+class RenegociacaoParcela(BaseModel):
+    """Uma parcela do novo plano de pagamento da dívida renegociada."""
+
+    numero: int = Field(..., ge=1, le=5)
+    valor: Decimal = Field(..., gt=0)
+    vencimento: date
+
+
+class RenegociacaoRequest(BaseModel):
+    """Pedido para renegociar a dívida em aberto de um cliente.
+
+    Soma o saldo devedor de todas as vendas a prazo em aberto do cliente e
+    substitui por uma única venda consolidada, com um novo parcelamento
+    (máximo de 5 parcelas, mesma regra do parcelamento no PDV).
+    """
+
+    parcelas: list[RenegociacaoParcela] = Field(..., min_length=1, max_length=5)
+    observacao: str | None = Field(default=None, max_length=300)
 
 
 class MotivoDevolucao(str, Enum):
@@ -194,10 +222,35 @@ class ContaReceberLinha(BaseModel):
     cliente_telefone: str | None = None
     num_vendas: int
     total_devido: Decimal
+    # Lucro embutido no saldo devedor (fração do lucro da venda proporcional
+    # à parte ainda não recebida).
+    lucro_devido: Decimal = Decimal("0.00")
     venda_mais_antiga: datetime
     # Parcelas em atraso (vencimento já passou e ainda em aberto).
     parcelas_vencidas: int = 0
     valor_vencido: Decimal = Decimal("0.00")
+
+
+class ParcelaAReceber(BaseModel):
+    """Uma parcela em aberto de uma venda a prazo, com o cliente dono dela.
+
+    Granularidade usada pela visão de calendário/filtros de recebimento — cada
+    linha é uma parcela pendente (parcial ou totalmente), não um cliente.
+    """
+
+    parcela_id: int
+    venda_id: int
+    numero: int
+    vencimento: date
+    valor_parcela: Decimal
+    valor_restante: Decimal
+    # Lucro embutido no valor ainda não recebido desta parcela.
+    lucro_restante: Decimal = Decimal("0.00")
+    cliente_id: int | None
+    cliente_nome: str
+    cliente_telefone: str | None = None
+    vencida: bool = False
+    dias_atraso: int = 0
 
 
 class VendaOut(BaseModel):
@@ -219,6 +272,12 @@ class VendaOut(BaseModel):
     entrega_status: str | None = None
     entregue_em: datetime | None = None
     endereco_entrega: str | None = None
+    renegociada_em: datetime | None = None
+    renegociada_para_venda_id: int | None = None
+    # Venda consolidada criada por uma renegociação de dívida: não é
+    # mercadoria vendida agora, é o novo acordo de pagamento de uma dívida
+    # antiga. Fica de fora do faturamento/lucro dos relatórios.
+    eh_renegociacao: bool = False
     itens: list[ItemVendaOut] = Field(default_factory=list)
     devolucoes: list["DevolucaoOut"] = Field(default_factory=list)
     pagamentos: list["PagamentoOut"] = Field(default_factory=list)
@@ -263,10 +322,16 @@ class VendaOut(BaseModel):
     def saldo_devedor(self) -> Decimal:
         """Quanto ainda falta receber. Zero quando a venda não é a prazo.
 
-        Vendas estornadas não têm saldo em aberto. Nunca fica negativo (se o
-        cliente pagou mais do que o total após uma devolução, o saldo é zero).
+        Vendas estornadas não têm saldo em aberto. Vendas renegociadas também
+        não: a dívida foi transferida para a venda consolidada indicada em
+        ``renegociada_para_venda_id``. Nunca fica negativo (se o cliente pagou
+        mais do que o total após uma devolução, o saldo é zero).
         """
-        if not self.a_prazo or self.cancelada_em is not None:
+        if (
+            not self.a_prazo
+            or self.cancelada_em is not None
+            or self.renegociada_em is not None
+        ):
             return Decimal("0.00")
         saldo = Decimal(self.total_liquido) - self.total_pago
         return saldo.quantize(Decimal("0.01")) if saldo > 0 else Decimal("0.00")
@@ -275,4 +340,12 @@ class VendaOut(BaseModel):
     @property
     def quitada(self) -> bool:
         """Verdadeiro quando a venda a prazo já foi totalmente paga."""
-        return self.a_prazo and self.saldo_devedor <= 0
+        return self.a_prazo and self.saldo_devedor <= 0 and self.renegociada_em is None
+
+
+class RenegociacaoOut(BaseModel):
+    """Resultado da renegociação: a nova venda consolidada e as antigas."""
+
+    venda_nova: VendaOut
+    vendas_renegociadas: list[VendaOut] = Field(default_factory=list)
+    total_renegociado: Decimal

@@ -56,6 +56,10 @@ class CompraResumo(BaseModel):
     a_prazo: bool = False
     total_pago: Decimal = Decimal("0")
     saldo_devedor: Decimal = Decimal("0")
+    # Dívida transferida para uma venda consolidada de renegociação: não conta
+    # mais nas estatísticas nem no saldo devedor (ver `total_gasto`/`saldo_devedor`
+    # da ficha), mas continua listada aqui para auditoria do histórico.
+    renegociada: bool = False
 
 
 class FichaCliente(BaseModel):

@@ -260,6 +260,8 @@ export interface ContaReceber {
   cliente_telefone?: string | null;
   num_vendas: number;
   total_devido: string;
+  /** Lucro embutido no saldo devedor (fração do lucro da venda). */
+  lucro_devido: string;
   venda_mais_antiga: string;
   parcelas_vencidas: number;
   valor_vencido: string;
@@ -273,10 +275,49 @@ export interface Parcela {
   vencimento: string;
 }
 
+/**
+ * Uma parcela em aberto (uma linha por parcela, não por cliente), com o
+ * cliente dono dela. Alimenta o calendário e os filtros por período da tela
+ * de contas a receber.
+ */
+export interface ParcelaAReceber {
+  parcela_id: number;
+  venda_id: number;
+  numero: number;
+  vencimento: string; // ISO date (YYYY-MM-DD)
+  valor_parcela: string;
+  valor_restante: string;
+  /** Lucro embutido no valor ainda não recebido desta parcela. */
+  lucro_restante: string;
+  cliente_id: number | null;
+  cliente_nome: string;
+  cliente_telefone?: string | null;
+  vencida: boolean;
+  dias_atraso: number;
+}
+
 export interface ParcelaCreate {
   numero: number;
   valor: number;
   vencimento: string; // ISO date (YYYY-MM-DD)
+}
+
+/** Uma parcela do novo acordo ao renegociar a dívida de um cliente. */
+export interface RenegociacaoParcela {
+  numero: number;
+  valor: number;
+  vencimento: string; // ISO date (YYYY-MM-DD)
+}
+
+export interface RenegociacaoRequest {
+  parcelas: RenegociacaoParcela[];
+  observacao?: string | null;
+}
+
+export interface RenegociacaoResultado {
+  venda_nova: Venda;
+  vendas_renegociadas: Venda[];
+  total_renegociado: string;
 }
 
 export interface ItemVenda {
@@ -286,6 +327,8 @@ export interface ItemVenda {
   quantidade: number;
   preco_unitario: string;
   custo_unitario: string;
+  /** Desconto em reais sobre a linha inteira do item (preço × quantidade). */
+  desconto: string;
   subtotal: string;
   lucro: string;
 }
@@ -341,6 +384,8 @@ export interface ItemVendaCreate {
   produto_id: number;
   quantidade: number;
   preco_unitario?: number | null;
+  /** Desconto em reais sobre a linha inteira do item (preço × quantidade). */
+  desconto?: number;
 }
 
 export interface Venda {
@@ -361,6 +406,10 @@ export interface Venda {
   entrega_status?: string | null;
   entregue_em?: string | null;
   endereco_entrega?: string | null;
+  renegociada_em?: string | null;
+  renegociada_para_venda_id?: number | null;
+  /** Venda consolidada criada por uma renegociação de dívida (não é mercadoria vendida agora). */
+  eh_renegociacao: boolean;
   itens: ItemVenda[];
   devolucoes: Devolucao[];
   pagamentos: Pagamento[];
@@ -426,6 +475,8 @@ export interface CompraResumo {
   a_prazo: boolean;
   total_pago: string;
   saldo_devedor: string;
+  /** Dívida transferida para uma venda consolidada de renegociação. */
+  renegociada: boolean;
 }
 
 export interface FichaCliente {

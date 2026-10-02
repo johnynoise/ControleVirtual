@@ -15,18 +15,10 @@ import { listarCategorias } from "../services/categorias";
 import { criarCliente, listarClientes } from "../services/clientes";
 import { criarVenda } from "../services/vendas";
 import ReciboModal from "../components/ReciboModal";
+import FechamentoVendaModal from "../components/FechamentoVendaModal";
 import EstadoVazio from "../components/EstadoVazio";
 import { useToast } from "../components/Feedback";
-import { brl, corAvatar, extrairErro, formatarTelefone, iniciais, parseNumero } from "../lib/ui";
-
-const PAGAMENTOS: { valor: FormaPagamento; rotulo: string; icone: string }[] = [
-  { valor: "dinheiro", rotulo: "Dinheiro", icone: "💵" },
-  { valor: "pix", rotulo: "PIX", icone: "⚡" },
-  { valor: "cartao_credito", rotulo: "Crédito", icone: "💳" },
-  { valor: "cartao_debito", rotulo: "Débito", icone: "🏦" },
-  { valor: "fiado", rotulo: "A prazo", icone: "📓" },
-  { valor: "outro", rotulo: "Outro", icone: "•" },
-];
+import { brl, corAvatar, extrairErro, iniciais, parseNumero } from "../lib/ui";
 
 interface ItemCarrinho {
   produto_id: number;
@@ -37,6 +29,9 @@ interface ItemCarrinho {
   // Marca itens cujo preço o operador digitou à mão. Esses não são
   // re-precificados quando a forma de pagamento muda.
   preco_editado: boolean;
+  // Desconto em reais sobre a linha inteira (preço × quantidade), independente
+  // do desconto total da venda.
+  desconto: number;
 }
 
 // Preço de tabela do produto conforme a forma de pagamento: no fiado vale o
@@ -93,13 +88,18 @@ export default function VendasPage() {
   const [desconto, setDesconto] = useState("0");
   const [descontoTipo, setDescontoTipo] = useState<"reais" | "percent">("reais");
 
-  // Parcelamento (apenas fiado): quantidade de parcelas (1 a 3) e a data de
+  // Parcelamento (apenas fiado): quantidade de parcelas (1 a 5) e a data de
   // vencimento combinada para cada uma.
-  const [numParcelas, setNumParcelas] = useState<1 | 2 | 3>(1);
+  const [numParcelas, setNumParcelas] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [vencimentos, setVencimentos] = useState<string[]>([]);
 
   // Delivery: quando ligado, a venda entra como pedido pendente de entrega.
   const [entrega, setEntrega] = useState(false);
+
+  // Modal de fechamento: concentra cliente, entrega, pagamento, desconto e
+  // troco numa etapa separada da montagem do carrinho — assim o painel
+  // lateral fica só com os itens enquanto o vendedor monta a venda.
+  const [mostrarFechamento, setMostrarFechamento] = useState(false);
 
   // Valor recebido em dinheiro (para cálculo de troco). Não vai ao backend.
   const [recebido, setRecebido] = useState("");
@@ -112,6 +112,11 @@ export default function VendasPage() {
   // ser string: guardar só o número faria a vírgula desaparecer no meio da
   // digitação ("12," → 12 → "12"), e "12,50" acabaria virando 1250.
   const [precoTexto, setPrecoTexto] = useState<Record<number, string>>({});
+
+  // Desconto por item: mesmo padrão do editor de preço (campo travado por
+  // padrão, com um botão para abrir/fechar o input de edição).
+  const [descontosAbertos, setDescontosAbertos] = useState<number[]>([]);
+  const [descontoTexto, setDescontoTexto] = useState<Record<number, string>>({});
 
   function alternarPreco(produto_id: number) {
     if (precosAbertos.includes(produto_id)) {
@@ -141,11 +146,20 @@ export default function VendasPage() {
   useEffect(() => {
     setCarrinho((atual) =>
       atual.map((i) => {
-        if (i.preco_editado) return i;
+        if (i.preco_editado) {
+          const brutoAtual = i.preco_unitario * i.quantidade;
+          return i.desconto > brutoAtual ? { ...i, desconto: brutoAtual } : i;
+        }
         const p = produtos.find((prod) => prod.id === i.produto_id);
         if (!p) return i;
         const novo = precoTabela(p, formaPagamento);
-        return novo === i.preco_unitario ? i : { ...i, preco_unitario: novo };
+        if (novo === i.preco_unitario) return i;
+        const novoBruto = novo * i.quantidade;
+        return {
+          ...i,
+          preco_unitario: novo,
+          desconto: Math.min(i.desconto, novoBruto),
+        };
       })
     );
     // Os preços acabaram de ser re-derivados, então qualquer campo de preço
@@ -153,6 +167,8 @@ export default function VendasPage() {
     // continua no carrinho (preco_editado protege), só o editor fecha.
     setPrecosAbertos([]);
     setPrecoTexto({});
+    setDescontosAbertos([]);
+    setDescontoTexto({});
   }, [formaPagamento, produtos]);
 
   // Cadastro rápido de cliente direto na tela de venda.
@@ -222,6 +238,7 @@ export default function VendasPage() {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         if (vendaRecibo) setVendaRecibo(null);
+        else if (mostrarFechamento) setMostrarFechamento(false);
         else if (novoCliente) cancelarNovoCliente();
         return;
       }
@@ -230,20 +247,24 @@ export default function VendasPage() {
 
       if (e.key === "F2") {
         e.preventDefault();
-        finalizar();
+        // Primeiro F2 abre o fechamento (pagamento/cliente/desconto); com o
+        // modal já aberto, o segundo F2 confirma a venda.
+        if (mostrarFechamento) finalizar();
+        else if (carrinho.length > 0) setMostrarFechamento(true);
       } else if (e.key === "F3") {
         e.preventDefault(); // evita abrir a busca do navegador
         buscaRef.current?.focus();
         buscaRef.current?.select();
       } else if (e.key === "F4") {
         e.preventDefault();
+        setMostrarFechamento(true);
         setNovoCliente(true);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendaRecibo, novoCliente, carrinho, salvando, clienteId, formaPagamento, desconto, descontoTipo, recebido]);
+  }, [vendaRecibo, mostrarFechamento, novoCliente, carrinho, salvando, clienteId, formaPagamento, desconto, descontoTipo, recebido]);
 
   // Só mostra abas de categorias que de fato têm produtos no catálogo.
   const categoriasComProdutos = useMemo(() => {
@@ -273,31 +294,42 @@ export default function VendasPage() {
     );
   }, [produtos, busca, catFiltro]);
 
+  // Bruto de fato: soma de preço × quantidade, sem nenhum desconto.
   const totalBruto = useMemo(
     () => carrinho.reduce((acc, i) => acc + i.preco_unitario * i.quantidade, 0),
     [carrinho]
   );
+  // Soma dos descontos aplicados linha a linha (antes do desconto total).
+  const totalDescontoItens = useMemo(
+    () => carrinho.reduce((acc, i) => acc + i.desconto, 0),
+    [carrinho]
+  );
+  // Total já líquido dos descontos de item, mas antes do desconto total da
+  // venda — é a base sobre a qual o desconto total (reais/percentual) incide.
+  const totalAposItens = totalBruto - totalDescontoItens;
   const totalItens = useMemo(
     () => carrinho.reduce((acc, i) => acc + i.quantidade, 0),
     [carrinho]
   );
-  // O desconto pode ser informado em reais ou em percentual do subtotal.
-  // O backend sempre recebe o valor em reais (descontoValor).
+  // O desconto pode ser informado em reais ou em percentual do subtotal (já
+  // líquido dos descontos de item). O backend sempre recebe o valor em reais
+  // (descontoValor).
   const descontoDigitado = parseNumero(desconto);
   // Valor pedido pelo operador, antes de qualquer limite.
   const descontoPedido =
     descontoTipo === "percent"
-      ? totalBruto * (Math.max(0, descontoDigitado) / 100)
+      ? totalAposItens * (Math.max(0, descontoDigitado) / 100)
       : Math.max(0, descontoDigitado);
-  // O desconto nunca passa do subtotal. Antes o excesso era absorvido em
-  // silêncio pelo Math.max(0, ...) do total, então um erro de digitação
-  // (R$ 500 num total de R$ 50) fechava a venda por R$ 0,00 sem nenhum aviso.
-  const descontoValor = Math.min(descontoPedido, totalBruto);
-  const descontoExcedido = totalBruto > 0 && descontoPedido - totalBruto > 0.005;
-  const totalLiquido = totalBruto - descontoValor;
+  // O desconto nunca passa do total já líquido dos descontos de item. Antes o
+  // excesso era absorvido em silêncio pelo Math.max(0, ...) do total, então um
+  // erro de digitação (R$ 500 num total de R$ 50) fechava a venda por R$ 0,00
+  // sem nenhum aviso.
+  const descontoValor = Math.min(descontoPedido, totalAposItens);
+  const descontoExcedido = totalAposItens > 0 && descontoPedido - totalAposItens > 0.005;
+  const totalLiquido = totalAposItens - descontoValor;
   // Percentual efetivo, para o operador conferir a ordem de grandeza.
   const descontoPercentual =
-    totalBruto > 0 ? (descontoValor / totalBruto) * 100 : 0;
+    totalAposItens > 0 ? (descontoValor / totalAposItens) * 100 : 0;
   const vendaZerada = totalBruto > 0 && totalLiquido < 0.005;
 
   // Valores de cada parcela: divide o total igualmente em centavos e joga a
@@ -379,6 +411,7 @@ export default function VendasPage() {
           preco_unitario: precoTabela(p, formaPagamento),
           estoque: p.estoque,
           preco_editado: false,
+          desconto: 0,
         },
       ];
     });
@@ -394,7 +427,9 @@ export default function VendasPage() {
             toast.erro(`Estoque máximo de ${i.produto_nome} atingido (${i.estoque}).`);
             return i;
           }
-          return { ...i, quantidade: nova };
+          // O desconto da linha não pode passar do novo valor bruto.
+          const novoBruto = i.preco_unitario * nova;
+          return { ...i, quantidade: nova, desconto: Math.min(i.desconto, novoBruto) };
         })
         .filter((i) => i.quantidade > 0)
     );
@@ -410,7 +445,8 @@ export default function VendasPage() {
         if (q > i.estoque) {
           toast.erro(`${i.produto_nome} tem apenas ${i.estoque} em estoque.`);
         }
-        return { ...i, quantidade: limitada };
+        const novoBruto = i.preco_unitario * limitada;
+        return { ...i, quantidade: limitada, desconto: Math.min(i.desconto, novoBruto) };
       })
     );
   }
@@ -423,11 +459,16 @@ export default function VendasPage() {
     setPrecoTexto((atual) => ({ ...atual, [produto_id]: texto }));
     const preco = Math.max(0, parseNumero(texto));
     setCarrinho((atual) =>
-      atual.map((i) =>
-        i.produto_id === produto_id
-          ? { ...i, preco_unitario: preco, preco_editado: true }
-          : i
-      )
+      atual.map((i) => {
+        if (i.produto_id !== produto_id) return i;
+        const novoBruto = preco * i.quantidade;
+        return {
+          ...i,
+          preco_unitario: preco,
+          preco_editado: true,
+          desconto: Math.min(i.desconto, novoBruto),
+        };
+      })
     );
   }
 
@@ -447,6 +488,56 @@ export default function VendasPage() {
     setCarrinho((atual) => atual.filter((i) => i.produto_id !== produto_id));
     setPrecosAbertos((atual) => atual.filter((id) => id !== produto_id));
     descartarPrecoTexto(produto_id);
+    setDescontosAbertos((atual) => atual.filter((id) => id !== produto_id));
+    descartarDescontoTexto(produto_id);
+  }
+
+  function descartarDescontoTexto(produto_id: number) {
+    setDescontoTexto((atual) => {
+      if (!(produto_id in atual)) return atual;
+      const novo = { ...atual };
+      delete novo[produto_id];
+      return novo;
+    });
+  }
+
+  function alternarDesconto(produto_id: number) {
+    if (descontosAbertos.includes(produto_id)) {
+      setDescontosAbertos((atual) => atual.filter((id) => id !== produto_id));
+      descartarDescontoTexto(produto_id);
+      return;
+    }
+    const item = carrinho.find((i) => i.produto_id === produto_id);
+    setDescontoTexto((atual) => ({
+      ...atual,
+      [produto_id]: item && item.desconto > 0 ? precoParaTexto(item.desconto) : "",
+    }));
+    setDescontosAbertos((atual) => [...atual, produto_id]);
+  }
+
+  function definirDesconto(produto_id: number, valor: string) {
+    const texto = valor.replace(/[^\d.,]/g, "");
+    setDescontoTexto((atual) => ({ ...atual, [produto_id]: texto }));
+    const desconto = Math.max(0, parseNumero(texto));
+    setCarrinho((atual) =>
+      atual.map((i) => {
+        if (i.produto_id !== produto_id) return i;
+        // O desconto não pode passar do valor bruto da linha.
+        const bruto = i.preco_unitario * i.quantidade;
+        return { ...i, desconto: Math.min(desconto, bruto) };
+      })
+    );
+  }
+
+  // Ao sair do campo, reescreve o texto no formato canônico ("12,5" → "12,50").
+  function normalizarDesconto(produto_id: number) {
+    const item = carrinho.find((i) => i.produto_id === produto_id);
+    if (!item) return;
+    setDescontoTexto((atual) =>
+      produto_id in atual
+        ? { ...atual, [produto_id]: precoParaTexto(item.desconto) }
+        : atual
+    );
   }
 
   function definirVencimento(indice: number, valor: string) {
@@ -523,10 +614,13 @@ export default function VendasPage() {
     setRecebido("");
     setPrecosAbertos([]);
     setPrecoTexto({});
+    setDescontosAbertos([]);
+    setDescontoTexto({});
     setBusca("");
     setNumParcelas(1);
     setVencimentos([]);
     setEntrega(false);
+    setMostrarFechamento(false);
   }
 
   async function finalizar() {
@@ -581,6 +675,7 @@ export default function VendasPage() {
       produto_id: i.produto_id,
       quantidade: i.quantidade,
       preco_unitario: i.preco_unitario,
+      ...(i.desconto > 0 ? { desconto: Number(i.desconto.toFixed(2)) } : {}),
     }));
 
     const payload: VendaCreate = {
@@ -886,320 +981,132 @@ export default function VendasPage() {
                           +
                         </button>
                       </div>
-                      <span className="pdv-item-subtotal">
-                        {brl(i.preco_unitario * i.quantidade)}
-                      </span>
+                      <div className="pdv-item-subtotal-col">
+                        {i.desconto > 0 && !descontosAbertos.includes(i.produto_id) && (
+                          <span className="pdv-item-desconto-tag">
+                            − {brl(i.desconto)}
+                          </span>
+                        )}
+                        <span className="pdv-item-subtotal">
+                          {brl(i.preco_unitario * i.quantidade - i.desconto)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="pdv-item-desconto-linha">
+                      {descontosAbertos.includes(i.produto_id) ? (
+                        <label className="pdv-item-preco pdv-item-desconto">
+                          <span>desc. R$</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={descontoTexto[i.produto_id] ?? ""}
+                            onChange={(e) =>
+                              definirDesconto(i.produto_id, e.target.value)
+                            }
+                            onBlur={() => normalizarDesconto(i.produto_id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                alternarDesconto(i.produto_id);
+                              }
+                            }}
+                            aria-label={`Desconto do item ${i.produto_nome}`}
+                            autoFocus
+                          />
+                        </label>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={`pdv-item-desconto-btn${descontosAbertos.includes(i.produto_id) ? " ativo" : ""}`}
+                        onClick={() => alternarDesconto(i.produto_id)}
+                      >
+                        {descontosAbertos.includes(i.produto_id)
+                          ? "Concluir desconto"
+                          : i.desconto > 0
+                            ? "Editar desconto"
+                            : "Dar desconto no item"}
+                      </button>
                     </div>
                   </li>
                 ))}
               </ul>
 
-              <div className="pdv-cliente">
-                <label>
-                  Cliente
-                  <div className="linha-inline">
-                    <select
-                      value={clienteId}
-                      onChange={(e) =>
-                        setClienteId(e.target.value === "" ? "" : Number(e.target.value))
-                      }
-                      disabled={novoCliente}
-                    >
-                      <option value="">Sem cliente</option>
-                      {clientes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nome}
-                        </option>
-                      ))}
-                    </select>
-                    {!novoCliente && (
-                      <button
-                        type="button"
-                        className="btn secundario pequeno"
-                        onClick={() => setNovoCliente(true)}
-                      >
-                        + Novo
-                      </button>
-                    )}
-                  </div>
-                </label>
-
-                {novoCliente && (
-                  <div className="pdv-novo-cliente">
-                    <input
-                      value={ncNome}
-                      onChange={(e) => setNcNome(e.target.value)}
-                      placeholder="Nome do cliente"
-                    />
-                    <input
-                      type="tel"
-                      inputMode="tel"
-                      value={ncTelefone}
-                      onChange={(e) => setNcTelefone(formatarTelefone(e.target.value))}
-                      placeholder="Telefone (opcional)"
-                    />
-                    <input
-                      type="email"
-                      value={ncEmail}
-                      onChange={(e) => setNcEmail(e.target.value)}
-                      placeholder="E-mail (opcional)"
-                    />
-                    <input
-                      value={ncEndereco}
-                      onChange={(e) => setNcEndereco(e.target.value)}
-                      placeholder="Endereço (para delivery)"
-                    />
-                    <div className="form-acoes" style={{ marginTop: 0 }}>
-                      <button
-                        type="button"
-                        className="btn primario pequeno"
-                        onClick={salvarNovoCliente}
-                        disabled={salvandoCliente}
-                      >
-                        {salvandoCliente ? "Salvando..." : "Salvar"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn secundario pequeno"
-                        onClick={cancelarNovoCliente}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
+              {/* ↑ fim do corpo rolável (só os itens agora) */}
 
-              <div className="pdv-entrega">
-                <label className="pdv-entrega-toggle">
-                  <input
-                    type="checkbox"
-                    checked={entrega}
-                    onChange={(e) => setEntrega(e.target.checked)}
-                  />
-                  <span className="pdv-entrega-texto">
-                    <strong>🛵 Delivery (entrega)</strong>
-                    <span className="muted">
-                      Entra como pedido pendente. A venda só é concluída ao
-                      confirmar a entrega.
-                    </span>
-                  </span>
-                </label>
-                {entrega &&
-                  (clienteSelecionado == null ? (
-                    <p className="pdv-entrega-aviso alerta">
-                      ⚠ Selecione um cliente acima: a entrega vai para o endereço
-                      cadastrado dele.
-                    </p>
-                  ) : (clienteSelecionado.endereco ?? "").trim() === "" ? (
-                    <p className="pdv-entrega-aviso alerta">
-                      ⚠ {clienteSelecionado.nome} não tem endereço cadastrado.
-                      Edite o cliente para adicionar.
-                    </p>
-                  ) : (
-                    <p className="pdv-entrega-aviso">
-                      📍 Entregar em: {clienteSelecionado.endereco}
-                    </p>
-                  ))}
-              </div>
-              </div>
-              {/* ↑ fim do corpo rolável (itens, cliente, entrega) */}
-
-              {/* Fechamento da venda, fixo no rodapé do painel: tudo o que é
-                  preciso para fechar (pagamento, desconto, total, troco) fica
-                  visível sem depender de rolar um carrinho cheio. Só cresce
-                  além do limite no fiado parcelado, e aí rola por dentro. */}
-              <div className="pdv-fechamento">
-              <div className="pdv-pagamento">
-                <span className="pdv-label">Forma de pagamento</span>
-                <div className="pdv-pgto-pills">
-                  {PAGAMENTOS.map((p) => (
-                    <button
-                      key={p.valor}
-                      type="button"
-                      className={`pdv-pill${formaPagamento === p.valor ? " ativo" : ""}`}
-                      onClick={() => setFormaPagamento(p.valor)}
-                    >
-                      <span className="pdv-pill-icone">{p.icone}</span>
-                      {p.rotulo}
-                    </button>
-                  ))}
-                </div>
-                {formaPagamento === "fiado" && (
-                  <p
-                    className={`pdv-fiado-aviso${clienteId === "" ? " alerta" : ""}`}
-                  >
-                    {clienteId === ""
-                      ? "⚠ Selecione um cliente acima: a venda a prazo fica no nome dele."
-                      : "📓 Esta venda entra como saldo devedor do cliente."}
-                  </p>
-                )}
-
-                {formaPagamento === "fiado" && totalLiquido > 0 && (
-                  <div className="pdv-parcelamento">
-                    <span className="pdv-label">Parcelar em</span>
-                    <div
-                      className="pdv-parcelas-opcoes"
-                      role="group"
-                      aria-label="Número de parcelas"
-                    >
-                      {[1, 2, 3].map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          className={`pdv-parcela-opcao${numParcelas === n ? " ativo" : ""}`}
-                          onClick={() => setNumParcelas(n as 1 | 2 | 3)}
-                          aria-pressed={numParcelas === n}
-                        >
-                          {n}x
-                        </button>
-                      ))}
-                    </div>
-
-                    <ul className="pdv-parcelas-lista">
-                      {valoresParcelas.map((valor, k) => (
-                        <li key={k} className="pdv-parcela-linha">
-                          <span className="pdv-parcela-rotulo">
-                            {k + 1}ª parcela
-                            <strong>{brl(valor)}</strong>
-                          </span>
-                          <label className="pdv-parcela-data">
-                            <span>Vence em</span>
-                            <input
-                              type="date"
-                              value={vencimentos[k] ?? ""}
-                              onChange={(e) =>
-                                definirVencimento(k, e.target.value)
-                              }
-                            />
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              <div className="pdv-totais">
-                <div className="pdv-linha-desc">
-                  <span>Subtotal</span>
-                  <span>{brl(totalBruto)}</span>
-                </div>
-                <div className="pdv-linha-desc">
-                  <label htmlFor="pdv-desconto">Desconto</label>
-                  <div className="pdv-desc-campo">
-                    <div className="pdv-desc-toggle" role="group" aria-label="Tipo de desconto">
-                      <button
-                        type="button"
-                        className={descontoTipo === "reais" ? "ativo" : ""}
-                        onClick={() => setDescontoTipo("reais")}
-                        aria-pressed={descontoTipo === "reais"}
-                      >
-                        R$
-                      </button>
-                      <button
-                        type="button"
-                        className={descontoTipo === "percent" ? "ativo" : ""}
-                        onClick={() => setDescontoTipo("percent")}
-                        aria-pressed={descontoTipo === "percent"}
-                      >
-                        %
-                      </button>
-                    </div>
-                    <input
-                      id="pdv-desconto"
-                      type="text"
-                      inputMode="decimal"
-                      value={desconto}
-                      onChange={(e) => setDesconto(e.target.value)}
-                    />
-                  </div>
-                </div>
-                {descontoValor > 0 && (
-                  <div className="pdv-linha-desc">
-                    <span>
-                      Desconto aplicado{" "}
-                      <span className="pdv-desc-pct">
-                        ({descontoPercentual.toFixed(descontoPercentual < 10 ? 1 : 0)}%)
-                      </span>
-                    </span>
-                    <span>− {brl(descontoValor)}</span>
-                  </div>
-                )}
-                {descontoExcedido && (
-                  <p className="pdv-desc-aviso" role="alert">
-                    ⚠ Desconto de {brl(descontoPedido)} é maior que o subtotal.
-                    Aplicando no máximo {brl(totalBruto)}.
-                  </p>
-                )}
-                {vendaZerada && !descontoExcedido && (
-                  <p className="pdv-desc-aviso" role="alert">
-                    ⚠ O desconto zerou a venda. Confira antes de finalizar.
-                  </p>
-                )}
-                <div className={`pdv-total${vendaZerada ? " zerado" : ""}`}>
-                  <span>Total</span>
+              {/* Resumo compacto sempre visível: total corrente + atalho para
+                  abrir o fechamento. Cliente, pagamento, desconto e troco
+                  moraram para o modal — não competem por altura com os itens. */}
+              <div className="pdv-resumo-fixo">
+                <div className="pdv-resumo-linha">
+                  <span>{totalItens} {totalItens === 1 ? "item" : "itens"}</span>
                   <strong>{brl(totalLiquido)}</strong>
                 </div>
-
-                {formaPagamento === "dinheiro" && totalLiquido > 0 && !entrega && (
-                  <div className="pdv-troco">
-                    <label htmlFor="pdv-recebido" className="pdv-label">
-                      Dinheiro recebido
-                    </label>
-                    {sugestoesRecebido.length > 0 && (
-                      <div className="pdv-troco-chips">
-                        {sugestoesRecebido.map((v) => (
-                          <button
-                            key={v}
-                            type="button"
-                            className="pdv-troco-chip"
-                            onClick={() => setRecebido(String(v))}
-                          >
-                            {v === totalLiquido ? "Exato" : brl(v)}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <input
-                      id="pdv-recebido"
-                      className="pdv-troco-input"
-                      type="text"
-                      inputMode="decimal"
-                      value={recebido}
-                      onChange={(e) => setRecebido(e.target.value)}
-                      placeholder="0,00"
-                    />
-                    {recebidoNum > 0 && (
-                      <div
-                        className={`pdv-troco-linha ${troco >= 0 ? "ok" : "falta"}`}
-                      >
-                        <span>{troco >= 0 ? "Troco" : "Falta"}</span>
-                        <strong>{brl(Math.abs(troco))}</strong>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <button
+                  className="btn primario pdv-finalizar"
+                  onClick={() => setMostrarFechamento(true)}
+                  disabled={carrinho.length === 0}
+                >
+                  Finalizar venda
+                  <kbd className="pdv-kbd-btn">F2</kbd>
+                </button>
               </div>
-              </div>
-              {/* ↑ fim do fechamento; o botão fica fora dele para não rolar */}
-
-              <button
-                className="btn primario pdv-finalizar"
-                onClick={finalizar}
-                disabled={salvando || carrinho.length === 0}
-              >
-                {salvando
-                  ? entrega
-                    ? "Registrando..."
-                    : "Finalizando..."
-                  : `${entrega ? "Registrar entrega" : formaPagamento === "fiado" ? "Vender a prazo" : "Finalizar"} · ${brl(totalLiquido)}`}
-                {!salvando && <kbd className="pdv-kbd-btn">F2</kbd>}
-              </button>
             </>
           )}
         </aside>
       </div>
+
+      {mostrarFechamento && (
+        <FechamentoVendaModal
+          onFechar={() => setMostrarFechamento(false)}
+          onConfirmar={finalizar}
+          salvando={salvando}
+          totalBruto={totalBruto}
+          totalDescontoItens={totalDescontoItens}
+          descontoValor={descontoValor}
+          descontoPercentual={descontoPercentual}
+          descontoExcedido={descontoExcedido}
+          descontoPedido={descontoPedido}
+          totalAposItens={totalAposItens}
+          totalLiquido={totalLiquido}
+          vendaZerada={vendaZerada}
+          clientes={clientes}
+          clienteId={clienteId}
+          setClienteId={setClienteId}
+          clienteSelecionado={clienteSelecionado}
+          novoCliente={novoCliente}
+          setNovoCliente={setNovoCliente}
+          ncNome={ncNome}
+          setNcNome={setNcNome}
+          ncTelefone={ncTelefone}
+          setNcTelefone={setNcTelefone}
+          ncEmail={ncEmail}
+          setNcEmail={setNcEmail}
+          ncEndereco={ncEndereco}
+          setNcEndereco={setNcEndereco}
+          salvandoCliente={salvandoCliente}
+          salvarNovoCliente={salvarNovoCliente}
+          cancelarNovoCliente={cancelarNovoCliente}
+          entrega={entrega}
+          setEntrega={setEntrega}
+          formaPagamento={formaPagamento}
+          setFormaPagamento={setFormaPagamento}
+          desconto={desconto}
+          setDesconto={setDesconto}
+          descontoTipo={descontoTipo}
+          setDescontoTipo={setDescontoTipo}
+          numParcelas={numParcelas}
+          setNumParcelas={setNumParcelas}
+          valoresParcelas={valoresParcelas}
+          vencimentos={vencimentos}
+          definirVencimento={definirVencimento}
+          recebido={recebido}
+          setRecebido={setRecebido}
+          recebidoNum={recebidoNum}
+          troco={troco}
+          sugestoesRecebido={sugestoesRecebido}
+        />
+      )}
 
       {vendaRecibo && (
         <ReciboModal

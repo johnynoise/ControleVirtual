@@ -92,9 +92,17 @@ def periodo_de_dias(dias: int) -> Periodo:
 def vendas_do_periodo(db: Session, periodo: Periodo) -> list[Venda]:
     """Vendas que contam nos relatórios do período.
 
-    Fica de fora o que não é faturamento: vendas estornadas (canceladas) e
-    pedidos de entrega ainda pendentes, que nem baixaram estoque. O relatório
-    fiscal usa este mesmo recorte, para os números baterem entre as telas.
+    Fica de fora o que não é faturamento: vendas estornadas (canceladas),
+    pedidos de entrega ainda pendentes (que nem baixaram estoque), e a venda
+    consolidada criada por uma renegociação de dívida (``eh_renegociacao``).
+    Essa venda consolidada não representa mercadoria vendida agora — é só o
+    novo acordo de pagamento de uma dívida antiga — então contá-la dobraria o
+    faturamento do mesmo dinheiro. As vendas *originais* que foram
+    renegociadas continuam contando normalmente aqui, no dia em que a
+    mercadoria de fato saiu: o lucro/custo delas é real e não deve
+    desaparecer dos relatórios só porque a dívida foi renegociada depois. O
+    relatório fiscal usa este mesmo recorte, para os números baterem entre as
+    telas.
     """
     return (
         db.query(Venda)
@@ -102,6 +110,7 @@ def vendas_do_periodo(db: Session, periodo: Periodo) -> list[Venda]:
             Venda.criado_em >= periodo.inicio,
             Venda.criado_em <= periodo.fim,
             Venda.cancelada_em.is_(None),
+            Venda.eh_renegociacao.is_(False),
             func.coalesce(Venda.entrega_status, "") != "pendente",
         )
         .all()
@@ -198,8 +207,10 @@ def mais_vendidos(db: Session, periodo: Periodo, limite: int = 10) -> dict:
             },
         )
         registro["quantidade"] += item.quantidade
+        # Lucro a partir do subtotal (já líquido do desconto do item), não do
+        # preço de tabela — senão o lucro fica inflado quando há desconto.
         registro["faturamento"] += item.subtotal or 0
-        registro["lucro"] += (item.preco_unitario - item.custo_unitario) * item.quantidade
+        registro["lucro"] += (item.subtotal or 0) - (item.custo_unitario * item.quantidade)
 
     lista = list(agregado.values())
     for r in lista:
@@ -336,8 +347,10 @@ def produtos_faturamento(db: Session, periodo: Periodo) -> dict:
     agregado: dict = {}
     por_categoria: dict = {}
     for item in itens:
-        lucro_item = (item.preco_unitario - item.custo_unitario) * item.quantidade
         subtotal = item.subtotal or 0
+        # Lucro a partir do subtotal (já líquido do desconto do item), não do
+        # preço de tabela — senão o lucro fica inflado quando há desconto.
+        lucro_item = subtotal - (item.custo_unitario * item.quantidade)
 
         chave = item.produto_id if item.produto_id is not None else f"nome:{item.produto_nome}"
         cat = mapa_categoria.get(item.produto_id) if item.produto_id else None
@@ -915,6 +928,7 @@ def clientes_inativos(db: Session, dias: int) -> dict:
         .filter(
             Venda.cliente_id.isnot(None),
             Venda.cancelada_em.is_(None),
+            Venda.eh_renegociacao.is_(False),
             func.coalesce(Venda.entrega_status, "") != "pendente",
         )
         .group_by(Venda.cliente_id)

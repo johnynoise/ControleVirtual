@@ -329,12 +329,18 @@ def _contas_a_receber(db: Session, periodo: Periodo) -> dict:
     Considera as vendas a prazo feitas até o fim do período e os pagamentos
     recebidos até a mesma data, então reflete a posição naquele momento.
     """
+    # Este cálculo é sobre saldo devedor (não faturamento): aqui sim precisa
+    # excluir vendas renegociadas, pois a dívida delas foi transferida para a
+    # venda consolidada — sem isso, o saldo apareceria em dobro (na venda
+    # antiga e na nova). Diferente de `vendas_do_periodo`, que é sobre
+    # faturamento e por isso mantém as vendas originais renegociadas.
     vendas_fiado = (
         db.query(Venda)
         .filter(
             Venda.forma_pagamento == _FIADO,
             Venda.criado_em <= periodo.fim,
             Venda.cancelada_em.is_(None),
+            Venda.renegociada_em.is_(None),
             func.coalesce(Venda.entrega_status, "") != "pendente",
         )
         .all()

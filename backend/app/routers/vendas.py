@@ -18,6 +18,9 @@ from app.schemas.venda import (
     EnviarReciboResponse,
     EstornoRequest,
     PagamentoCreate,
+    ParcelaAReceber,
+    RenegociacaoOut,
+    RenegociacaoRequest,
     VendaCreate,
     VendaOut,
 )
@@ -39,6 +42,18 @@ def listar_contas_a_receber(db: Session = Depends(get_db)):
     return crud_venda.contas_a_receber(db)
 
 
+@router.get("/contas-a-receber/parcelas", response_model=list[ParcelaAReceber])
+def listar_parcelas_a_receber(db: Session = Depends(get_db)):
+    """Parcelas em aberto (uma linha por parcela), para calendário e filtros.
+
+    Cada linha traz a data de vencimento e o cliente dono da parcela, o que
+    permite montar a visão de calendário de recebimentos e filtrar por
+    período (hoje, atrasadas, próximos dias) sem depender do agregado por
+    cliente de ``/contas-a-receber``.
+    """
+    return crud_venda.parcelas_a_receber(db)
+
+
 @router.get("/contas-a-receber/{cliente_id}", response_model=list[VendaOut])
 def listar_fiado_cliente(
     cliente_id: int,
@@ -51,6 +66,34 @@ def listar_fiado_cliente(
     pagamento). Use ``apenas_abertas=true`` para trazer só as com saldo devedor.
     """
     return crud_venda.fiado_por_cliente(db, cliente_id, apenas_abertas=apenas_abertas)
+
+
+@router.post(
+    "/contas-a-receber/{cliente_id}/renegociar",
+    response_model=RenegociacaoOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def renegociar_divida(
+    cliente_id: int,
+    dados: RenegociacaoRequest,
+    db: Session = Depends(get_db),
+):
+    """Renegocia a dívida em aberto de um cliente.
+
+    Soma o saldo devedor de todas as vendas a prazo em aberto do cliente e
+    cria uma nova venda consolidada com o parcelamento informado. As vendas
+    antigas ficam marcadas como renegociadas (saem do saldo devedor), mas
+    continuam no histórico para auditoria.
+    """
+    try:
+        venda_nova, vendas_antigas = crud_venda.renegociar(db, cliente_id, dados)
+    except ErroVenda as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return RenegociacaoOut(
+        venda_nova=venda_nova,
+        vendas_renegociadas=vendas_antigas,
+        total_renegociado=venda_nova.total_liquido,
+    )
 
 
 @router.get("/entregas", response_model=list[VendaOut])

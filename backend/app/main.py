@@ -45,6 +45,12 @@ def _migrar_colunas() -> None:
             "entrega_status": "VARCHAR(20)",
             "entregue_em": "TIMESTAMP",
             "endereco_entrega": "VARCHAR(300)",
+            "renegociada_em": "TIMESTAMP",
+            "renegociada_para_venda_id": "INTEGER",
+            "eh_renegociacao": "BOOLEAN NOT NULL DEFAULT '0'",
+        },
+        "itens_venda": {
+            "desconto": "NUMERIC(12, 2) NOT NULL DEFAULT 0",
         },
         "clientes": {
             "data_nascimento": "DATE",

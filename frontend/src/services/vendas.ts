@@ -3,6 +3,9 @@ import type {
   ContaReceber,
   DevolucaoCreate,
   PagamentoCreate,
+  ParcelaAReceber,
+  RenegociacaoRequest,
+  RenegociacaoResultado,
   Venda,
   VendaCreate,
 } from "../types";
@@ -53,6 +56,17 @@ export async function listarContasReceber(): Promise<ContaReceber[]> {
   return data;
 }
 
+/**
+ * Todas as parcelas em aberto (uma linha por parcela), para o calendário de
+ * recebimentos e os filtros por período da tela de contas a receber.
+ */
+export async function listarParcelasAReceber(): Promise<ParcelaAReceber[]> {
+  const { data } = await api.get<ParcelaAReceber[]>(
+    "/vendas/contas-a-receber/parcelas"
+  );
+  return data;
+}
+
 /** Pedidos de delivery. Por padrão só os pendentes (fila de entrega). */
 export async function listarEntregas(
   incluirEntregues = false
@@ -75,6 +89,22 @@ export async function listarFiadoDoCliente(
 ): Promise<Venda[]> {
   const { data } = await api.get<Venda[]>(
     `/vendas/contas-a-receber/${clienteId}`
+  );
+  return data;
+}
+
+/**
+ * Renegocia a dívida em aberto de um cliente: soma o saldo devedor de todas
+ * as vendas a prazo em aberto e cria uma nova venda consolidada com o
+ * parcelamento informado. As vendas antigas saem do saldo devedor.
+ */
+export async function renegociarDivida(
+  clienteId: number,
+  dados: RenegociacaoRequest
+): Promise<RenegociacaoResultado> {
+  const { data } = await api.post<RenegociacaoResultado>(
+    `/vendas/contas-a-receber/${clienteId}/renegociar`,
+    dados
   );
   return data;
 }
