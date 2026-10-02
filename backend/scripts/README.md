@@ -47,6 +47,23 @@ Outros comandos disponíveis:
 .\remover-servico.ps1    # desinstala o serviço (não apaga dados nem o projeto)
 ```
 
+## Trocando de pasta/repositório no mesmo computador
+
+Se este computador já teve o serviço instalado apontando para outra cópia do
+repositório (ex: pasta antiga, desatualizada) e agora você quer que ele passe
+a servir esta pasta aqui, rode:
+
+```powershell
+.\renovar-servico.ps1
+```
+
+Esse script para e remove o serviço antigo, encerra qualquer processo Python
+que tenha sobrado escutando na porta 8000 (comum quando o serviço antigo não
+foi removido corretamente ou havia uma execução manual esquecida), e então
+reinstala e inicia o serviço já apontando para esta pasta. Equivale a rodar
+`remover-servico.ps1` + limpeza manual de processos + `instalar-servico.ps1` +
+`iniciar-servico.ps1`, só que automatizado.
+
 ## Logs
 
 Ficam em `backend\logs\stdout.log` e `backend\logs\stderr.log` (rotacionam
