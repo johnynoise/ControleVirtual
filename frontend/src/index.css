@@ -2818,6 +2818,183 @@ kbd {
   color: var(--azul-escuro);
 }
 
+/* Campo de busca de produto (combobox) dentro do formulário de movimentação. */
+.campo-produto {
+  position: relative;
+  margin-bottom: 1.1rem;
+}
+
+.campo-produto > label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+}
+
+.mov-busca-produto {
+  margin: 0;
+}
+
+.mov-produto-resultados {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  box-shadow: var(--sombra-md);
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.35rem;
+}
+
+.mov-produto-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: none;
+  background: none;
+  border-radius: var(--raio-sm);
+  font-family: inherit;
+  font-size: 0.92rem;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.mov-produto-item:hover,
+.mov-produto-item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.mov-produto-nome {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mov-produto-estoque {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mov-produto-estoque.ambar {
+  color: var(--ambar);
+  font-weight: 600;
+}
+
+.mov-produto-resultados .vazio.pequeno {
+  padding: 0.6rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+/* Controle de quantidade com +/- ao lado do campo numérico. */
+.qtd-stepper {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--raio-sm);
+  overflow: hidden;
+  background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.qtd-stepper:focus-within {
+  border-color: var(--azul);
+  box-shadow: 0 0 0 3px var(--azul-suave);
+}
+
+.qtd-stepper-btn {
+  flex-shrink: 0;
+  width: 2.6rem;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.qtd-stepper-btn:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.qtd-stepper-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.form .qtd-stepper input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  padding: 0.7rem 0.5rem;
+  font-size: 1rem;
+  font-family: inherit;
+  text-align: center;
+  background: var(--surface);
+  color: var(--text);
+  /* Remove as setinhas nativas do number input: já temos os botões próprios. */
+  -moz-appearance: textfield;
+}
+
+.qtd-stepper input::-webkit-outer-spin-button,
+.qtd-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.form .qtd-stepper input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Chips de motivo: alternativa legível a um <select> com valores técnicos. */
+.motivo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+}
+
+.motivo-chip {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.motivo-chip:hover {
+  border-color: #d3d9e2;
+}
+
+.motivo-chip.ativo {
+  background: var(--azul-suave);
+  border-color: var(--azul);
+  color: var(--azul-escuro);
+}
+
 /* Prévia "estoque atual → ficará". */
 .mov-preview {
   display: flex;

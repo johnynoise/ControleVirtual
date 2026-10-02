@@ -16,16 +16,46 @@ import Paginacao from "../components/Paginacao";
 import { useToast } from "../components/Feedback";
 import { brl, dataHora, extrairErro } from "../lib/ui";
 
-const MOTIVOS: Record<TipoMovimentacao, string[]> = {
-  entrada: ["compra", "devolucao", "inventario", "outro"],
-  saida: ["venda", "perda", "uso_interno", "outro"],
-  ajuste: ["inventario", "correcao", "outro"],
+// Motivos com rótulo amigável. O valor salvo no banco continua o mesmo de
+// sempre (texto livre, até 40 caracteres) — só a apresentação mudou.
+const MOTIVOS: Record<TipoMovimentacao, { valor: string; rotulo: string }[]> = {
+  entrada: [
+    { valor: "compra", rotulo: "Compra" },
+    { valor: "devolucao", rotulo: "Devolução de cliente" },
+    { valor: "inventario", rotulo: "Contagem/inventário" },
+    { valor: "outro", rotulo: "Outro" },
+  ],
+  saida: [
+    { valor: "venda", rotulo: "Venda" },
+    { valor: "perda", rotulo: "Perda/quebra" },
+    { valor: "uso_interno", rotulo: "Uso interno" },
+    { valor: "outro", rotulo: "Outro" },
+  ],
+  ajuste: [
+    { valor: "inventario", rotulo: "Contagem/inventário" },
+    { valor: "correcao", rotulo: "Correção" },
+    { valor: "outro", rotulo: "Outro" },
+  ],
 };
 
 const ROTULO_TIPO: Record<TipoMovimentacao, string> = {
   entrada: "Entrada",
   saida: "Saída",
   ajuste: "Ajuste",
+};
+
+// Mapa reverso valor → rótulo amigável, para exibir no histórico sem repetir
+// a lista de motivos por tipo.
+const ROTULO_MOTIVO: Record<string, string> = Object.values(MOTIVOS)
+  .flat()
+  .reduce((acc, m) => ({ ...acc, [m.valor]: m.rotulo }), {} as Record<string, string>);
+
+// Texto do botão principal, de acordo com o tipo escolhido — deixa claro o
+// que vai acontecer ao confirmar, em vez de um genérico "Registrar".
+const ROTULO_ACAO: Record<TipoMovimentacao, string> = {
+  entrada: "Registrar entrada",
+  saida: "Registrar saída",
+  ajuste: "Aplicar ajuste",
 };
 
 // Quantidade de registros por página no histórico.
@@ -54,6 +84,13 @@ export default function MovimentacoesPage() {
   const [fornecedorId, setFornecedorId] = useState<number | "">("");
   const [observacao, setObservacao] = useState("");
 
+  // Busca de produto no formulário (combobox: digita e escolhe da lista,
+  // em vez de um <select> nativo longo e difícil de usar com muitos itens).
+  const [buscaProduto, setBuscaProduto] = useState("");
+  const [listaProdutoAberta, setListaProdutoAberta] = useState(false);
+  const produtoBuscaRef = useRef<HTMLInputElement>(null);
+  const produtoCampoRef = useRef<HTMLDivElement>(null);
+
   // Filtros e paginação do histórico.
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoMovimentacao | "">("");
@@ -63,6 +100,39 @@ export default function MovimentacoesPage() {
   const qtdRef = useRef<HTMLInputElement>(null);
 
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) ?? null;
+
+  // Resultado da busca de produto no formulário (até 8 itens, para a lista
+  // ficar curta e fácil de escanear).
+  const produtosEncontrados = useMemo(() => {
+    const termo = buscaProduto.trim().toLowerCase();
+    const base = termo
+      ? produtos.filter(
+          (p) =>
+            p.nome.toLowerCase().includes(termo) ||
+            (p.sku ?? "").toLowerCase().includes(termo) ||
+            (p.codigo_barras ?? "").toLowerCase().includes(termo)
+        )
+      : produtos;
+    return base.slice(0, 8);
+  }, [produtos, buscaProduto]);
+
+  // Fecha a lista de resultados ao clicar fora do campo de busca.
+  useEffect(() => {
+    function aoClicarFora(e: MouseEvent) {
+      if (!produtoCampoRef.current?.contains(e.target as Node)) {
+        setListaProdutoAberta(false);
+      }
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return () => document.removeEventListener("mousedown", aoClicarFora);
+  }, []);
+
+  function escolherProduto(p: Produto) {
+    setProdutoId(p.id);
+    setBuscaProduto(p.nome);
+    setListaProdutoAberta(false);
+    setTimeout(() => qtdRef.current?.focus(), 0);
+  }
 
   // Busca as movimentações do backend já filtradas por tipo (quando houver),
   // com limite alto para não cortar entradas antigas. As saídas de venda são
@@ -140,22 +210,25 @@ export default function MovimentacoesPage() {
 
   function trocarTipo(novo: TipoMovimentacao) {
     setTipo(novo);
-    setMotivo(MOTIVOS[novo][0]);
+    setMotivo(MOTIVOS[novo][0].valor);
   }
 
   function limpar() {
     setProdutoId("");
+    setBuscaProduto("");
     setTipo("entrada");
     setQuantidade("1");
     setMotivo("compra");
     setCustoUnitario("");
     setFornecedorId("");
     setObservacao("");
+    produtoBuscaRef.current?.focus();
   }
 
   // Pré-preenche o formulário para repor um item em falta.
   function repor(p: Produto) {
     setProdutoId(p.id);
+    setBuscaProduto(p.nome);
     setTipo("entrada");
     setMotivo("compra");
     const sugestao = Math.max(1, p.estoque_minimo - p.estoque || 1);
@@ -199,6 +272,16 @@ export default function MovimentacoesPage() {
 
   const labelQuantidade =
     tipo === "ajuste" ? "Novo estoque (valor final)" : "Quantidade";
+
+  // Mínimo aceito no campo: ajuste permite zerar o estoque, entrada/saída não.
+  const minimoQuantidade = tipo === "ajuste" ? 0 : 1;
+
+  // Soma/subtrai 1 da quantidade pelos botões rápidos, sem deixar passar do mínimo.
+  function passoQuantidade(delta: number) {
+    const atual = parseInt(quantidade, 10) || 0;
+    const novo = Math.max(minimoQuantidade, atual + delta);
+    setQuantidade(String(novo));
+  }
 
   // Estoque resultante previsto conforme o tipo.
   const estoquePrevisto = (() => {
@@ -279,49 +362,92 @@ export default function MovimentacoesPage() {
             ))}
           </div>
 
-          <div className="grid-2">
-            <label>
-              Produto
-              <select
-                value={produtoId}
-                onChange={(e) =>
-                  setProdutoId(e.target.value === "" ? "" : Number(e.target.value))
-                }
-                required
-              >
-                <option value="">Selecione...</option>
-                {produtos.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome} (estoque: {p.estoque})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {labelQuantidade}
+          <div className="campo-produto" ref={produtoCampoRef}>
+            <label htmlFor="mov-busca-produto">Produto</label>
+            <div className="busca mov-busca-produto">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
               <input
-                ref={qtdRef}
-                type="number"
-                min={tipo === "ajuste" ? "0" : "1"}
-                value={quantidade}
-                onChange={(e) => setQuantidade(e.target.value)}
+                id="mov-busca-produto"
+                ref={produtoBuscaRef}
+                value={buscaProduto}
+                onChange={(e) => {
+                  setBuscaProduto(e.target.value);
+                  setProdutoId("");
+                  setListaProdutoAberta(true);
+                }}
+                onFocus={() => setListaProdutoAberta(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setListaProdutoAberta(false);
+                  if (e.key === "Enter" && produtosEncontrados.length === 1) {
+                    e.preventDefault();
+                    escolherProduto(produtosEncontrados[0]);
+                  }
+                }}
+                placeholder="Digite o nome, SKU ou código de barras..."
+                autoComplete="off"
                 required
               />
-            </label>
+            </div>
+            {listaProdutoAberta && (
+              <div className="mov-produto-resultados">
+                {produtosEncontrados.length === 0 ? (
+                  <p className="vazio pequeno">Nenhum produto encontrado.</p>
+                ) : (
+                  produtosEncontrados.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="mov-produto-item"
+                      onClick={() => escolherProduto(p)}
+                    >
+                      <span className="mov-produto-nome">{p.nome}</span>
+                      <span
+                        className={`mov-produto-estoque${p.estoque <= p.estoque_minimo ? " ambar" : ""}`}
+                      >
+                        {p.estoque} un.
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid-2">
             <label>
-              Motivo
-              <select value={motivo} onChange={(e) => setMotivo(e.target.value)}>
-                {MOTIVOS[tipo].map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+              {labelQuantidade}
+              <div className="qtd-stepper">
+                <button
+                  type="button"
+                  className="qtd-stepper-btn"
+                  onClick={() => passoQuantidade(-1)}
+                  disabled={(parseInt(quantidade, 10) || 0) <= minimoQuantidade}
+                  aria-label="Diminuir quantidade"
+                >
+                  −
+                </button>
+                <input
+                  ref={qtdRef}
+                  type="number"
+                  min={minimoQuantidade}
+                  value={quantidade}
+                  onChange={(e) => setQuantidade(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="qtd-stepper-btn"
+                  onClick={() => passoQuantidade(1)}
+                  aria-label="Aumentar quantidade"
+                >
+                  +
+                </button>
+              </div>
             </label>
-            {tipo === "entrada" ? (
+            {tipo === "entrada" && (
               <label>
                 Custo unitário
                 <input
@@ -333,46 +459,52 @@ export default function MovimentacoesPage() {
                   placeholder="Opcional"
                 />
               </label>
-            ) : (
-              <label>
-                Observação
-                <input
-                  value={observacao}
-                  onChange={(e) => setObservacao(e.target.value)}
-                  placeholder="Opcional"
-                />
-              </label>
             )}
           </div>
 
-          {tipo === "entrada" && (
-            <div className="grid-2">
-              <label>
-                Fornecedor
-                <select
-                  value={fornecedorId}
-                  onChange={(e) =>
-                    setFornecedorId(e.target.value === "" ? "" : Number(e.target.value))
-                  }
+          <div>
+            <div className="rotulo-campo">Motivo</div>
+            <div className="motivo-chips">
+              {MOTIVOS[tipo].map((m) => (
+                <button
+                  key={m.valor}
+                  type="button"
+                  className={`motivo-chip${motivo === m.valor ? " ativo" : ""}`}
+                  onClick={() => setMotivo(m.valor)}
                 >
-                  <option value="">Sem fornecedor</option>
-                  {fornecedores.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Observação
-                <input
-                  value={observacao}
-                  onChange={(e) => setObservacao(e.target.value)}
-                  placeholder="Opcional"
-                />
-              </label>
+                  {m.rotulo}
+                </button>
+              ))}
             </div>
+          </div>
+
+          {tipo === "entrada" && (
+            <label>
+              Fornecedor
+              <select
+                value={fornecedorId}
+                onChange={(e) =>
+                  setFornecedorId(e.target.value === "" ? "" : Number(e.target.value))
+                }
+              >
+                <option value="">Sem fornecedor</option>
+                {fornecedores.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
+
+          <label>
+            Observação
+            <input
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              placeholder="Opcional"
+            />
+          </label>
 
           {produtoSelecionado && (
             <div className="mov-preview">
@@ -403,7 +535,7 @@ export default function MovimentacoesPage() {
 
           <div className="form-acoes">
             <button className="btn primario" type="submit" disabled={salvando}>
-              {salvando ? "Registrando..." : "Registrar movimentação"}
+              {salvando ? "Registrando..." : ROTULO_ACAO[tipo]}
             </button>
             {produtoId !== "" && (
               <button type="button" className="btn secundario" onClick={limpar}>
@@ -546,7 +678,9 @@ export default function MovimentacoesPage() {
                     </span>
                   </td>
                   <td className="num">{m.estoque_resultante}</td>
-                  <td className="muted">{m.motivo ?? "—"}</td>
+                  <td className="muted">
+                    {m.motivo ? ROTULO_MOTIVO[m.motivo] ?? m.motivo : "—"}
+                  </td>
                   <td className="num">{m.custo_unitario ? brl(m.custo_unitario) : "—"}</td>
                   <td className="muted">{m.fornecedor_nome ?? "—"}</td>
                 </tr>
